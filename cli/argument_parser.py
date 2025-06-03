@@ -203,9 +203,9 @@ def validate_output_path(ctx, param, value) -> Optional[Path]:
 )
 @click.option(
     '--interval',
-    type=click.IntRange(1, 3600),
-    default=5,
-    help='監測間隔秒數 (預設: 5)'
+    type=click.IntRange(5, 3600),
+    default=10,
+    help='監測間隔秒數 (最小: 5, 預設: 10)'
 )
 @click.option(
     '--max-history',

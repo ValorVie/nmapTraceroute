@@ -83,6 +83,7 @@ class RealtimeMonitor:
         self.history = deque(maxlen=max_history)
         self.stats = MonitorStats()
         self.current_result = None
+        self.scanning_in_progress = False  # 防止重疊掃描
         
         # 回調函數
         self.on_scan_complete: Optional[Callable[[ScanResult], None]] = None
@@ -115,7 +116,11 @@ class RealtimeMonitor:
         
         # 如果需要顯示即時介面
         if display_live:
-            self._display_live_interface()
+            try:
+                self._display_live_interface()
+            except KeyboardInterrupt:
+                self.stop_monitoring()
+                self._show_exit_options()
     
     def stop_monitoring(self):
         """停止監測"""
@@ -129,6 +134,15 @@ class RealtimeMonitor:
         """監測主迴圈"""
         while self.is_running:
             try:
+                # 檢查是否有掃描在進行中
+                if self.scanning_in_progress:
+                    logger.warning("上次掃描尚未完成，跳過本次掃描")
+                    time.sleep(self.interval)
+                    continue
+                
+                # 設置掃描標記
+                self.scanning_in_progress = True
+                
                 # 執行掃描
                 start_time = time.time()
                 result = self.scanner.scan_target(self.target, self.port)
@@ -145,12 +159,20 @@ class RealtimeMonitor:
                 if self.on_scan_complete:
                     self.on_scan_complete(result)
                 
-                # 等待下次掃描
-                time.sleep(self.interval)
+                # 清除掃描標記
+                self.scanning_in_progress = False
+                
+                # 計算實際等待時間（間隔 - 掃描時間）
+                actual_wait = max(0, self.interval - scan_duration)
+                if actual_wait > 0:
+                    time.sleep(actual_wait)
+                else:
+                    logger.warning(f"掃描時間 ({scan_duration:.1f}s) 超過設定間隔 ({self.interval}s)")
                 
             except Exception as e:
                 logger.error(f"監測迴圈錯誤: {str(e)}")
                 self.stats.failed_scans += 1
+                self.scanning_in_progress = False
                 time.sleep(self.interval)
     
     def _update_stats(self, result: ScanResult, scan_duration: float):
@@ -271,9 +293,12 @@ class RealtimeMonitor:
             "Ctrl+C - 停止監測並顯示選項",
             "在監測結束後，您可以選擇:",
             "• 儲存 CSV 報告",
-            "• 儲存 HTML 報告", 
+            "• 儲存 HTML 報告",
             "• 查看詳細統計",
-            f"📊 監測間隔: {self.interval}秒 | 歷史記錄: {len(self.history)}/{self.max_history}"
+            "",
+            f"📊 監測間隔: {self.interval}秒 | 歷史記錄: {len(self.history)}/{self.max_history}",
+            f"⚠️  建議間隔 ≥ 10秒 (nmap 掃描約需 5-8秒)",
+            f"🔄 掃描狀態: {'進行中' if self.scanning_in_progress else '等待中'}"
         ]
         
         return Panel("\n".join(controls), title="說明")
