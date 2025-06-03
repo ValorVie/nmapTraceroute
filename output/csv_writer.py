@@ -50,7 +50,7 @@ class CSVWriter:
         file_path = self.output_dir / filename
         
         try:
-            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+            with open(file_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
                 writer = csv.writer(csvfile)
                 
                 # 寫入標題資訊
@@ -129,7 +129,7 @@ class CSVWriter:
         file_path = self.output_dir / filename
         
         try:
-            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+            with open(file_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
                 writer = csv.writer(csvfile)
                 
                 # 寫入檔案標題
@@ -220,7 +220,7 @@ class CSVWriter:
         file_path = self.output_dir / filename
         
         try:
-            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+            with open(file_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
                 writer = csv.writer(csvfile)
                 
                 # 寫入標題

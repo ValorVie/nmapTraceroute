@@ -423,7 +423,7 @@ class RealtimeMonitor:
         output_dir.mkdir(parents=True, exist_ok=True)
         csv_path = output_dir / filename
 
-        with open(csv_path, 'w', newline='', encoding='utf-8 with BOM') as f:
+        with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             
             # 寫入監測摘要資訊
