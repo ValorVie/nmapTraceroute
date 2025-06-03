@@ -110,7 +110,47 @@ class ResultParser:
             if hop:
                 hops.append(hop)
         
+        # 填補缺失的跳點
+        if hops:
+            filled_hops = self._fill_missing_hops(hops)
+            return filled_hops
+        
         return hops
+    
+    def _fill_missing_hops(self, hops: List[HopData]) -> List[HopData]:
+        """
+        填補缺失的跳點
+        
+        Args:
+            hops: 原始跳點列表
+        
+        Returns:
+            填補後的跳點列表
+        """
+        if not hops:
+            return hops
+        
+        # 建立完整的跳點列表
+        filled_hops = []
+        max_hop = max(hop.hop_number for hop in hops)
+        
+        # 建立跳點編號到跳點物件的映射
+        hop_map = {hop.hop_number: hop for hop in hops}
+        
+        # 填補從 1 到最大跳點號的所有跳點
+        for i in range(1, max_hop + 1):
+            if i in hop_map:
+                filled_hops.append(hop_map[i])
+            else:
+                # 建立缺失的跳點
+                filled_hops.append(HopData(
+                    hop_number=i,
+                    ip_address="*",
+                    hostname="No response",
+                    status="timeout"
+                ))
+        
+        return filled_hops
     
     def _parse_hop_line(self, line: str) -> Optional[HopData]:
         """
@@ -139,12 +179,37 @@ class ResultParser:
                     status="timeout"
                 )
             
+            # 處理 nmap 的特殊格式，如 "... 5" 表示跳點 4 和 5 無回應
+            if hop_info.startswith('...'):
+                # 解析範圍，如 "... 5" 表示從當前跳點到 5 都無回應
+                try:
+                    end_hop = int(hop_info.replace('...', '').strip())
+                    return HopData(
+                        hop_number=hop_number,
+                        ip_address="*",
+                        hostname=f"No response (hops {hop_number}-{end_hop})",
+                        status="timeout"
+                    )
+                except ValueError:
+                    return HopData(
+                        hop_number=hop_number,
+                        ip_address="*",
+                        hostname="No response",
+                        status="timeout"
+                    )
+            
             # 解析 IP 地址和延遲時間
             ip_address, rtt_ms, hostname = self._extract_hop_details(hop_info)
             
             if not ip_address:
-                logger.warning(f"無法從跳點行提取 IP 地址: {line}")
-                return None
+                # 如果沒有找到 IP 地址，可能是無回應的跳點
+                logger.debug(f"跳點 {hop_number} 無 IP 地址，標記為無回應: {line}")
+                return HopData(
+                    hop_number=hop_number,
+                    ip_address="*",
+                    hostname="No response",
+                    status="timeout"
+                )
             
             return HopData(
                 hop_number=hop_number,
