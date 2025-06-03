@@ -41,8 +41,20 @@ def main():
             output_dir = args['output_dir'] or "output_data/charts"
             table_chart = TableChart(output_dir)
         
+        # 檢查是否為即時監測模式
+        if args['monitor']:
+            # 即時監測模式
+            if not args['target']:
+                logger.error("即時監測模式需要指定單一目標 (-t)")
+                sys.exit(1)
+            
+            if len(args['ports']) > 1:
+                logger.warning("即時監測模式只支援單一端口，使用第一個端口")
+            
+            _handle_realtime_monitoring(args)
+        
         # 執行掃描
-        if args['target']:
+        elif args['target']:
             # 單一目標掃描
             result = scanner.scan_target(
                 target=args['target'],
@@ -171,6 +183,41 @@ def _handle_batch_results(results, args, csv_writer, table_chart):
         html_file = table_chart.save_batch_html_report(results)
         if not args['quiet']:
             print(f"✓ 批量 HTML 報告已儲存: {html_file}")
+
+
+def _handle_realtime_monitoring(args):
+    """
+    處理即時監測
+    
+    Args:
+        args: 命令列參數
+    """
+    from core.realtime_monitor import RealtimeMonitor
+    
+    # 建立即時監測器
+    monitor = RealtimeMonitor(
+        target=args['target'],
+        port=args['ports'][0],  # 使用第一個端口
+        protocol=args['protocol'],
+        interval=args['interval'],
+        max_history=args['max_history'],
+        timeout=args['timeout']
+    )
+    
+    try:
+        # 開始監測
+        if not args['quiet']:
+            print(f"🚀 開始即時監測 {args['target']}:{args['ports'][0]}")
+            print(f"📊 監測間隔: {args['interval']}秒")
+            print("按 Ctrl+C 停止監測\n")
+        
+        monitor.start_monitoring(display_live=not args['quiet'])
+        
+    except KeyboardInterrupt:
+        print("\n⏹️  監測已停止")
+    except Exception as e:
+        logger.error(f"即時監測失敗: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

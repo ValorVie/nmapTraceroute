@@ -196,6 +196,23 @@ def validate_output_path(ctx, param, value) -> Optional[Path]:
     is_flag=True,
     help='測試 nmap 安裝'
 )
+@click.option(
+    '--monitor',
+    is_flag=True,
+    help='啟用即時監測模式'
+)
+@click.option(
+    '--interval',
+    type=click.IntRange(1, 3600),
+    default=5,
+    help='監測間隔秒數 (預設: 5)'
+)
+@click.option(
+    '--max-history',
+    type=click.IntRange(10, 10000),
+    default=100,
+    help='最大歷史記錄數 (預設: 100)'
+)
 def cli_main(
     target: Optional[str],
     targets_file: Optional[Path],
@@ -209,15 +226,19 @@ def cli_main(
     save_html: bool,
     verbose: bool,
     quiet: bool,
-    test_nmap: bool
+    test_nmap: bool,
+    monitor: bool,
+    interval: int,
+    max_history: int
 ):
     """
     Python + nmap Traceroute 工具
     
     範例:
-        python main.py -t 211.75.74.41 -p 443 --protocol tcp
-        python main.py -f targets.txt --output-csv results.csv --show-chart
-        python main.py --test-nmap
+        uv run python main.py -t 211.75.74.41 -p 443 --protocol tcp
+        uv run python main.py -f targets.txt --output-csv results.csv --show-chart
+        uv run python main.py -t 8.8.8.8 -p 53 --monitor --interval 10
+        uv run python main.py --test-nmap
     """
     # 驗證參數
     if test_nmap:
@@ -243,7 +264,10 @@ def cli_main(
         'show_chart': show_chart,
         'save_html': save_html,
         'verbose': verbose,
-        'quiet': quiet
+        'quiet': quiet,
+        'monitor': monitor,
+        'interval': interval,
+        'max_history': max_history
     }
 
 
