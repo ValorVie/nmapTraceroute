@@ -4,6 +4,8 @@
 """
 import time
 import threading
+import sys
+import csv
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Callable
 from collections import deque
@@ -301,9 +303,8 @@ class RealtimeMonitor:
         """建立控制面板"""
         controls = [
             "🎛️  控制選項:",
-            "",
-            "Ctrl+C - 停止監測並顯示選項",
-            "Ctrl+C 兩次 - 強制退出程式",
+            "Ctrl+C 兩次 - 停止監測並顯示選項",
+            "Ctrl+C 三次 - 強制退出程式",
             "在監測結束後，您可以選擇:",
             "• 儲存 CSV 報告",
             "• 儲存 HTML 報告",
@@ -434,14 +435,42 @@ class RealtimeMonitor:
                     f"{stats['max_rtt']:.3f}" if stats['max_rtt'] is not None else '',
                     f"{result.scan_duration:.2f}" if result.scan_duration else ''
                 ])
+        
             
+            writer.writerow([])
+            
+            # 寫入每個跳點的 RTT 統計
+            writer.writerow(['=== 跳點 RTT 統計分析 ==='])
+            hop_stats = self._calculate_hop_rtt_statistics()
+            
+            if hop_stats:
+                writer.writerow([
+                    '跳點編號', '出現次數', '成功次數', '成功率(%)', 
+                    '平均RTT(ms)', '最小RTT(ms)', '最大RTT(ms)', 
+                    'RTT標準差(ms)', '唯一IP數量', '主要IP位址'
+                ])
+                
+                for hop_num in sorted(hop_stats.keys()):
+                    stats = hop_stats[hop_num]
+                    writer.writerow([
+                        hop_num,
+                        stats['total_count'],
+                        stats['success_count'],
+                        f"{stats['success_rate']:.1f}",
+                        f"{stats['avg_rtt']:.3f}" if stats['avg_rtt'] is not None else '',
+                        f"{stats['min_rtt']:.3f}" if stats['min_rtt'] is not None else '',
+                        f"{stats['max_rtt']:.3f}" if stats['max_rtt'] is not None else '',
+                        f"{stats['rtt_std']:.3f}" if stats['rtt_std'] is not None else '',
+                        stats['unique_ips'],
+                        stats['primary_ip']
+                    ])
+
             writer.writerow([])
             
             # 寫入所有跳點詳細資料
             writer.writerow(['=== 所有跳點詳細資料 ==='])
             writer.writerow([
-                '掃描時間', '跳點編號', 'IP位址', '主機名', 'RTT(ms)', '狀態'
-            ])
+                '掃描時間', '跳點編號', 'IP位址', '主機名', 'RTT(ms)', '狀態'            ])
             
             for result in self.history:
                 scan_time_str = result.scan_time.strftime('%Y-%m-%d %H:%M:%S')
@@ -454,7 +483,7 @@ class RealtimeMonitor:
                         f"{hop.rtt_ms:.3f}" if hop.rtt_ms is not None else '',
                         hop.status
                     ])
-        
+
         return str(csv_path)
     
     def _save_html_report(self):
@@ -796,3 +825,62 @@ class RealtimeMonitor:
     def get_history(self) -> List[ScanResult]:
         """取得歷史記錄"""
         return list(self.history)
+    
+    def _calculate_hop_rtt_statistics(self) -> dict:
+        """計算每個跳點的 RTT 統計資料"""
+        import statistics
+        from collections import defaultdict, Counter
+        
+        hop_data = defaultdict(lambda: {
+            'rtts': [],
+            'ips': [],
+            'success_count': 0,
+            'total_count': 0
+        })
+        
+        # 收集每個跳點的數據
+        for result in self.history:
+            for hop in result.hops:
+                hop_num = hop.hop_number
+                hop_data[hop_num]['total_count'] += 1
+                
+                if hop.status == 'success' and hop.rtt_ms is not None:
+                    hop_data[hop_num]['success_count'] += 1
+                    hop_data[hop_num]['rtts'].append(hop.rtt_ms)
+                
+                if hop.ip_address:
+                    hop_data[hop_num]['ips'].append(hop.ip_address)
+        
+        # 計算統計數據
+        hop_stats = {}
+        for hop_num, data in hop_data.items():
+            rtts = data['rtts']
+            ips = data['ips']
+            
+            # 計算成功率
+            success_rate = (data['success_count'] / data['total_count'] * 100) if data['total_count'] > 0 else 0
+            
+            # 計算 RTT 統計
+            avg_rtt = statistics.mean(rtts) if rtts else None
+            min_rtt = min(rtts) if rtts else None
+            max_rtt = max(rtts) if rtts else None
+            rtt_std = statistics.stdev(rtts) if len(rtts) > 1 else None
+            
+            # 找出最常出現的 IP 位址
+            ip_counter = Counter(ips)
+            primary_ip = ip_counter.most_common(1)[0][0] if ips else 'N/A'
+            unique_ips = len(set(ips))
+            
+            hop_stats[hop_num] = {
+                'total_count': data['total_count'],
+                'success_count': data['success_count'],
+                'success_rate': success_rate,
+                'avg_rtt': avg_rtt,
+                'min_rtt': min_rtt,
+                'max_rtt': max_rtt,
+                'rtt_std': rtt_std,
+                'unique_ips': unique_ips,
+                'primary_ip': primary_ip
+            }
+        
+        return hop_stats
