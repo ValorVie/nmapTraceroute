@@ -5,6 +5,10 @@ import click
 from pathlib import Path
 from typing import List, Optional, Tuple
 from loguru import logger
+from config.default_settings import (
+    DEFAULT_PROTOCOL, DEFAULT_MAX_HOPS, DEFAULT_TIMEOUT,
+    DEFAULT_MONITOR_INTERVAL, DEFAULT_MAX_HISTORY
+)
 
 
 def validate_ports(ctx, param, value) -> List[int]:
@@ -144,21 +148,21 @@ def validate_output_path(ctx, param, value) -> Optional[Path]:
 @click.option(
     '--protocol',
     type=click.Choice(['tcp', 'udp'], case_sensitive=False),
-    default='tcp',
+    default=DEFAULT_PROTOCOL,
     callback=validate_protocol,
-    help='使用的協定 (預設: tcp)'
+    help=f'使用的協定 (預設: {DEFAULT_PROTOCOL})'
 )
 @click.option(
     '--max-hops',
     type=click.IntRange(1, 255),
-    default=30,
-    help='最大跳點數 (預設: 30)'
+    default=DEFAULT_MAX_HOPS,
+    help=f'最大跳點數 (預設: {DEFAULT_MAX_HOPS})'
 )
 @click.option(
     '--timeout',
     type=click.IntRange(5, 300),
-    default=30,
-    help='超時時間秒數 (預設: 30)'
+    default=DEFAULT_TIMEOUT,
+    help=f'超時時間秒數 (預設: {DEFAULT_TIMEOUT})'
 )
 @click.option(
     '--output-csv',
@@ -204,14 +208,14 @@ def validate_output_path(ctx, param, value) -> Optional[Path]:
 @click.option(
     '--interval',
     type=click.IntRange(5, 3600),
-    default=10,
-    help='監測間隔秒數 (最小: 5, 預設: 10)'
+    default=DEFAULT_MONITOR_INTERVAL,
+    help=f'監測間隔秒數 (最小: 5, 預設: {DEFAULT_MONITOR_INTERVAL})'
 )
 @click.option(
     '--max-history',
-    type=click.IntRange(10, 10000),
-    default=100,
-    help='最大歷史記錄數 (預設: 100)'
+    type=click.IntRange(0, 10000),
+    default=DEFAULT_MAX_HISTORY,
+    help=f'最大歷史記錄數 (預設: {DEFAULT_MAX_HISTORY}，設為 0 表示不限制)'
 )
 def cli_main(
     target: Optional[str],

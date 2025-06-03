@@ -37,11 +37,8 @@ brew install nmap
 # 使用 uv 安裝專案依賴 (推薦)
 uv add rich click pandas tabulate pydantic loguru
 
-# 或者使用 uv sync
+# 使用 uv sync
 uv sync
-
-# 傳統方式 (如果不使用 uv)
-pip install -r requirements.txt
 ```
 
 ## 快速開始
@@ -65,7 +62,7 @@ uv run python main.py -t 8.8.8.8 -p 53 --protocol udp
 uv run python main.py -t github.com -p 443 --save-html --show-chart
 
 # 即時監測模式
-uv run python main.py -t 8.8.8.8 -p 53 --monitor --interval 10 --max_history 100
+uv run python main.py -t 8.8.8.8 -p 53 --monitor --interval 10 --max-history 100
 
 # 測試 nmap 安裝
 uv run python main.py --test-nmap

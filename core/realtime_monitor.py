@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+
+from config.default_settings import (
+    DEFAULT_PORT, DEFAULT_PROTOCOL, DEFAULT_TIMEOUT,
+    DEFAULT_MONITOR_INTERVAL, DEFAULT_MAX_HISTORY
+)
 from rich.layout import Layout
 from rich.live import Live
 from rich.text import Text
@@ -47,11 +52,11 @@ class RealtimeMonitor:
     def __init__(
         self,
         target: str,
-        port: int = 80,
-        protocol: str = "tcp",
-        interval: int = 5,
-        max_history: int = 100,
-        timeout: int = 30
+        port: int = DEFAULT_PORT,
+        protocol: str = DEFAULT_PROTOCOL,
+        interval: int = DEFAULT_MONITOR_INTERVAL,
+        max_history: int = DEFAULT_MAX_HISTORY,
+        timeout: int = DEFAULT_TIMEOUT
     ):
         """
         初始化即時監測器
@@ -82,7 +87,7 @@ class RealtimeMonitor:
         # 監測狀態
         self.is_running = False
         self.monitor_thread = None
-        self.history = deque(maxlen=max_history)
+        self.history = deque(maxlen=max_history if max_history > 0 else None)
         self.stats = MonitorStats()
         self.current_result = None
         self.scanning_in_progress = False  # 防止重疊掃描
@@ -337,7 +342,7 @@ class RealtimeMonitor:
             "📊 監測資訊:",
             "",
             f"監測間隔: {self.interval}秒",
-            f"歷史記錄: {len(self.history)}/{self.max_history}",
+            f"歷史記錄: {len(self.history)}/{self.max_history if self.max_history > 0 else '無限制'}",
             f"掃描狀態: {'進行中' if self.scanning_in_progress else '等待中'}",
             "⚠️  建議間隔 ≥ 10秒 (nmap 掃描約需 5-8秒)"
         ]
