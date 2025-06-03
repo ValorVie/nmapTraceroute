@@ -85,7 +85,7 @@ class NmapExecutor:
         if protocol.lower() == "udp":
             cmd.append("-sU")
         else:
-            cmd.append("-sT")  # TCP connect scan
+            cmd.append("-sS")  # SYN stealth scan (更接近真實 nmap 行為)
         
         # Traceroute 參數
         cmd.append("--traceroute")
@@ -96,10 +96,10 @@ class NmapExecutor:
         
         # 詳細輸出
         if verbose:
-            cmd.append("-vv")
+            cmd.append("-v")
         
-        # 避免 DNS 解析延遲（可選）
-        cmd.append("-n")
+        # 啟用 DNS 解析以獲得主機名（移除 -n 參數）
+        # cmd.append("-n")  # 註解掉以啟用 DNS 解析
         
         # 目標
         cmd.append(target)

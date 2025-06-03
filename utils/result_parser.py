@@ -80,6 +80,9 @@ class ResultParser:
             for hop in hops:
                 result.add_hop(hop)
             
+            # 檢查是否到達目標
+            result.target_reached = self._check_target_reached(result, output)
+            
             logger.info(f"成功解析 {len(hops)} 個跳點")
             
         except Exception as e:
@@ -179,17 +182,34 @@ class ResultParser:
                     status="timeout"
                 )
             
-            # 處理 nmap 的特殊格式，如 "... 5" 表示跳點 4 和 5 無回應
-            if hop_info.startswith('...'):
+            # 處理 nmap 的特殊格式，如 "..." 或 "... 5" 表示無回應
+            if hop_info.strip() == '...':
+                # 單純的 "..." 表示該跳點無回應
+                return HopData(
+                    hop_number=hop_number,
+                    ip_address="*",
+                    hostname="No response",
+                    status="timeout"
+                )
+            elif hop_info.startswith('...'):
                 # 解析範圍，如 "... 5" 表示從當前跳點到 5 都無回應
                 try:
-                    end_hop = int(hop_info.replace('...', '').strip())
-                    return HopData(
-                        hop_number=hop_number,
-                        ip_address="*",
-                        hostname=f"No response (hops {hop_number}-{end_hop})",
-                        status="timeout"
-                    )
+                    end_hop_str = hop_info.replace('...', '').strip()
+                    if end_hop_str:
+                        end_hop = int(end_hop_str)
+                        return HopData(
+                            hop_number=hop_number,
+                            ip_address="*",
+                            hostname=f"No response (hops {hop_number}-{end_hop})",
+                            status="timeout"
+                        )
+                    else:
+                        return HopData(
+                            hop_number=hop_number,
+                            ip_address="*",
+                            hostname="No response",
+                            status="timeout"
+                        )
                 except ValueError:
                     return HopData(
                         hop_number=hop_number,
@@ -251,14 +271,29 @@ class ResultParser:
                 pass
         
         # 查找主機名稱
-        # 移除 IP 地址和時間資訊後查找剩餘的主機名稱
-        cleaned_info = re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '', hop_info)
-        cleaned_info = re.sub(r'\d+(?:\.\d+)?\s*ms', '', cleaned_info)
-        cleaned_info = cleaned_info.strip(' ()')
+        # 處理格式: "1.00 ms fw.valorvie.net (10.10.23.100)" 或 "1.00 ms 10.10.23.100"
         
-        hostname_matches = re.findall(r'([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', cleaned_info)
-        if hostname_matches:
-            hostname = hostname_matches[0]
+        # 首先檢查是否有 hostname (ip) 格式
+        hostname_ip_pattern = r'([a-zA-Z0-9.-]+(?:\.[a-zA-Z]{2,})?)\s*\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)'
+        hostname_ip_match = re.search(hostname_ip_pattern, hop_info)
+        
+        if hostname_ip_match:
+            hostname = hostname_ip_match.group(1)
+            if not ip_address:  # 如果之前沒找到IP，使用括號內的IP
+                ip_address = hostname_ip_match.group(2)
+        else:
+            # 移除 IP 地址和時間資訊後查找剩餘的主機名稱
+            cleaned_info = re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '', hop_info)
+            cleaned_info = re.sub(r'\d+(?:\.\d+)?\s*ms', '', cleaned_info)
+            cleaned_info = cleaned_info.strip(' ()')
+            
+            # 尋找域名格式的主機名
+            hostname_matches = re.findall(r'([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', cleaned_info)
+            if hostname_matches:
+                hostname = hostname_matches[0]
+            elif cleaned_info and re.match(r'^[a-zA-Z0-9.-]+$', cleaned_info):
+                # 如果清理後的資訊看起來像主機名（非純數字）
+                hostname = cleaned_info
         
         return ip_address, rtt_ms, hostname
     
@@ -301,3 +336,48 @@ class ResultParser:
                     hops.append(hop)
         
         return hops
+    
+    def _check_target_reached(self, result: ScanResult, nmap_output: str) -> bool:
+        """
+        檢查是否到達目標
+        
+        Args:
+            result: 掃描結果
+            nmap_output: nmap 完整輸出
+        
+        Returns:
+            是否到達目標
+        """
+        # 方法1: 檢查端口是否開放
+        if f"{result.port}/tcp open" in nmap_output or f"{result.port}/udp open" in nmap_output:
+            return True
+        
+        # 方法2: 檢查最後一跳是否為目標IP
+        if result.hops:
+            last_hop = result.hops[-1]
+            if last_hop.status == "success":
+                # 檢查IP是否匹配（可能需要解析目標主機名）
+                try:
+                    import socket
+                    target_ip = socket.gethostbyname(result.target)
+                    if last_hop.ip_address == target_ip or last_hop.ip_address == result.target:
+                        return True
+                except:
+                    # 如果解析失敗，檢查是否IP直接匹配
+                    if last_hop.ip_address == result.target:
+                        return True
+        
+        # 方法3: 檢查 traceroute 輸出中是否包含目標
+        traceroute_lines = nmap_output.split('\n')
+        for line in traceroute_lines:
+            if 'TRACEROUTE' in line.upper():
+                continue
+            if result.target in line and ('ms' in line or 'RTT' in line):
+                return True
+        
+        return False
+
+
+def create_result_parser() -> ResultParser:
+    """建立結果解析器實例"""
+    return ResultParser()
