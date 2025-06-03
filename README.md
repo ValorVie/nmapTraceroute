@@ -50,7 +50,7 @@ pip install -r requirements.txt
 
 ```bash
 # 基本使用 - 掃描單一目標
-uv run python main.py -t 211.75.74.41 -p 443 --protocol tcp
+uv run python main.py -t 8.8.8.8 -p 443 --protocol tcp
 
 # 掃描多個端口
 uv run python main.py -t example.com -p 80,443,22 --show-chart

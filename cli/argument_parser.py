@@ -235,7 +235,7 @@ def cli_main(
     Python + nmap Traceroute 工具
     
     範例:
-        uv run python main.py -t 211.75.74.41 -p 443 --protocol tcp
+        uv run python main.py -t 8.8.8.8 -p 443 --protocol tcp
         uv run python main.py -f targets.txt --output-csv results.csv --show-chart
         uv run python main.py -t 8.8.8.8 -p 53 --monitor --interval 10
         uv run python main.py --test-nmap

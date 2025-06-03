@@ -10,7 +10,7 @@
 2. **協定支援**：靈活使用 UDP/TCP 協定
 3. **端口選擇**：能選擇不同 port 進行 traceroute
 4. **輸出格式**：產生 CSV 檔案和表格式圖表
-5. **範例命令**：`nmap -p 443 --traceroute -vv 211.75.74.41`
+5. **範例命令**：`nmap -p 443 --traceroute -vv 8.8.8.8`
 
 ## 專案架構圖
 
@@ -183,7 +183,7 @@ dependencies = [
 ### 基本使用
 ```bash
 # 掃描單一目標
-python main.py --target 211.75.74.41 --port 443 --protocol tcp
+python main.py --target 8.8.8.8 --port 443 --protocol tcp
 
 # 輸出 CSV 和表格
 python main.py --target example.com --port 80,443 --output-csv results.csv --show-chart
@@ -197,7 +197,7 @@ python main.py --targets-file targets.txt --protocol udp --output-dir ./results/
 from core.traceroute_scanner import TracerouteScanner
 
 scanner = TracerouteScanner(protocol='tcp', max_hops=20)
-result = scanner.scan_target('211.75.74.41', [443])
+result = scanner.scan_target('8.8.8.8', [443])
 print(result.to_table())
 ```
 
@@ -230,7 +230,7 @@ Options:
 │  2  │ 10.0.0.1        │ isp-gateway.example.com      │ 12.567      │
 │  3  │ 203.69.123.45   │ router.telecom.tw            │ 25.891      │
 │ ... │ ...             │ ...                          │ ...         │
-│ 15  │ 211.75.74.41    │ target.example.com           │ 45.123      │
+│ 15  │ 8.8.8.8    │ target.example.com           │ 45.123      │
 └─────┴─────────────────┴──────────────────────────────┴─────────────┘
 
 Statistics:
