@@ -317,22 +317,40 @@ class RealtimeMonitor:
             stats_table.add_row("最大回應", f"{self.stats.max_response_time:.1f}ms")
         
         return Panel(stats_table, title="統計資訊")
-    
     def _create_controls_panel(self) -> Panel:
         """建立控制面板"""
-        controls = [
+        from rich.columns import Columns
+        from rich.align import Align
+        
+        # 左側控制選項
+        left_controls = [
             "🎛️  控制選項:",
             "",
             "Ctrl+C - 停止監測並顯示選項",
             "Ctrl+C 兩次 - 強制退出程式",
-            "在監測結束後，您可以選擇:「儲存 CSV 報告」、「儲存 HTML 報告」、「查看詳細統計」",
-            "",
-            f"📊 監測間隔: {self.interval}秒 | 歷史記錄: {len(self.history)}/{self.max_history}",
-            f"⚠️  建議間隔 ≥ 10秒 (nmap 掃描約需 5-8秒)",
-            f"🔄 掃描狀態: {'進行中' if self.scanning_in_progress else '等待中'}"
+            "在監測結束後，您可以選擇:",
+            "「儲存 CSV 報告」、「儲存 HTML 報告」、「查看詳細統計」"
         ]
         
-        return Panel("\n".join(controls), title="說明")
+        # 右側狀態資訊
+        right_info = [
+            "📊 監測資訊:",
+            "",
+            f"監測間隔: {self.interval}秒",
+            f"歷史記錄: {len(self.history)}/{self.max_history}",
+            f"掃描狀態: {'進行中' if self.scanning_in_progress else '等待中'}",
+            "⚠️  建議間隔 ≥ 10秒 (nmap 掃描約需 5-8秒)"
+        ]
+          # 創建左右分欄
+        left_text = "\n".join(left_controls)
+        right_text = "\n".join(right_info)
+        
+        # 使用 Align.right 包裝整個右側內容
+        right_aligned = Align.right(right_text)
+        
+        columns = Columns([left_text, right_aligned], equal=True, expand=True)
+        
+        return Panel(columns, title="說明")
     
     def _show_exit_options(self):
         """顯示退出選項"""

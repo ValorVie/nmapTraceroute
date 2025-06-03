@@ -65,7 +65,7 @@ uv run python main.py -t 8.8.8.8 -p 53 --protocol udp
 uv run python main.py -t github.com -p 443 --save-html --show-chart
 
 # 即時監測模式
-uv run python main.py -t 8.8.8.8 -p 53 --monitor --interval 10
+uv run python main.py -t 8.8.8.8 -p 53 --monitor --interval 10 --max_history 100
 
 # 測試 nmap 安裝
 uv run python main.py --test-nmap
