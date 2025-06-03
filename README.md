@@ -251,6 +251,12 @@ uv run python main.py -t 1.1.1.1 -p 53 --monitor --quiet --interval 10
 - 長期監測：60 秒或更長
 - nmap 掃描通常需要 5-8 秒完成
 
+**報告功能：**
+- 📊 **增強版 CSV 報告**：包含監測摘要、統計分析、詳細記錄和跳點分析
+- 📈 **互動式 HTML 報告**：含圖表、趨勢分析、跳點穩定性分析
+- 🔍 **詳細統計**：成功率、回應時間分布、跳點行為分析
+- 📋 **即時顯示**：監測過程中即時更新統計和狀態
+
 ## 輸出格式
 
 ### CSV 輸出
@@ -365,7 +371,24 @@ uv run pytest tests/
 
 # 執行範例
 uv run python examples/basic_usage.py
+
+# 完整功能演示
+uv run python demo_all_features.py
 ```
+
+### 演示腳本
+
+我們提供了一個完整的功能演示腳本 `demo_all_features.py`：
+
+```bash
+uv run python demo_all_features.py
+```
+
+演示內容包括：
+- 🚀 基本 traceroute 掃描
+- 📦 批量目標掃描
+- ⏱️ 即時監測功能
+- 📋 增強版報告生成
 
 ### 貢獻指南
 
@@ -380,6 +403,15 @@ uv run python examples/basic_usage.py
 此專案使用 MIT 授權條款，詳見 LICENSE 檔案。
 
 ## 更新日誌
+
+### v0.2.0 (2025-06-03)
+- ✨ 新增即時監測功能
+- 📊 增強版 CSV 報告 (詳細統計、跳點分析)
+- 📈 互動式 HTML 報告 (圖表、趨勢分析)
+- 🔄 防止掃描重疊機制
+- ⌨️ 改進 Ctrl+C 中斷處理
+- 🎯 優化 nmap 命令參數
+- 📋 添加跳點穩定性分析
 
 ### v0.1.0 (2025-06-03)
 - 初始版本發布

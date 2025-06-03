@@ -364,16 +364,98 @@ class RealtimeMonitor:
             return
         
         try:
-            csv_writer = CSVWriter()
-            results = list(self.history)
-            
+            # 建立增強版的 CSV 報告
             filename = f"monitor_{self.target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            csv_file = csv_writer.write_multiple_results(results, filename)
+            csv_file = self._create_enhanced_csv_report(filename)
             
-            self.console.print(f"✅ CSV 報告已儲存: {csv_file}")
+            self.console.print(f"✅ 增強版 CSV 報告已儲存: {csv_file}")
             
         except Exception as e:
             self.console.print(f"❌ 儲存 CSV 失敗: {str(e)}")
+    
+    def _create_enhanced_csv_report(self, filename: str) -> str:
+        """建立增強版的 CSV 報告"""
+        import csv
+        from pathlib import Path
+        
+        output_dir = Path("output_data/csv")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = output_dir / filename
+        
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            
+            # 寫入監測摘要資訊
+            writer.writerow(['=== 即時監測報告 ==='])
+            writer.writerow(['目標', self.target])
+            writer.writerow(['端口', self.port])
+            writer.writerow(['協定', self.protocol.upper()])
+            writer.writerow(['監測間隔', f'{self.interval} 秒'])
+            writer.writerow(['監測時間', f'{len(self.history) * self.interval / 60:.1f} 分鐘'])
+            writer.writerow(['生成時間', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+            writer.writerow([])
+            
+            # 寫入統計摘要
+            writer.writerow(['=== 統計摘要 ==='])
+            writer.writerow(['項目', '數值'])
+            writer.writerow(['總掃描次數', self.stats.total_scans])
+            writer.writerow(['成功次數', self.stats.successful_scans])
+            writer.writerow(['失敗次數', self.stats.failed_scans])
+            writer.writerow(['成功率', f'{self.stats.success_rate:.1f}%'])
+            
+            if self.stats.successful_scans > 0:
+                writer.writerow(['平均回應時間', f'{self.stats.avg_response_time:.3f} ms'])
+                writer.writerow(['最小回應時間', f'{self.stats.min_response_time:.3f} ms'])
+                writer.writerow(['最大回應時間', f'{self.stats.max_response_time:.3f} ms'])
+            
+            writer.writerow([])
+            
+            # 寫入詳細記錄標題
+            writer.writerow(['=== 詳細掃描記錄 ==='])
+            writer.writerow([
+                '掃描時間', '目標', '端口', '協定', '跳點數', '目標可達',
+                '成功跳點', '超時跳點', '平均RTT(ms)', '最小RTT(ms)', '最大RTT(ms)', '掃描耗時(s)'
+            ])
+            
+            # 寫入每次掃描的詳細資料
+            for result in self.history:
+                stats = result.get_statistics()
+                writer.writerow([
+                    result.scan_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    result.target,
+                    result.port,
+                    result.protocol.upper(),
+                    stats['total_hops'],
+                    '是' if stats['target_reached'] else '否',
+                    stats['successful_hops'],
+                    stats['timeout_hops'],
+                    f"{stats['avg_rtt']:.3f}" if stats['avg_rtt'] is not None else '',
+                    f"{stats['min_rtt']:.3f}" if stats['min_rtt'] is not None else '',
+                    f"{stats['max_rtt']:.3f}" if stats['max_rtt'] is not None else '',
+                    f"{result.scan_duration:.2f}" if result.scan_duration else ''
+                ])
+            
+            writer.writerow([])
+            
+            # 寫入所有跳點詳細資料
+            writer.writerow(['=== 所有跳點詳細資料 ==='])
+            writer.writerow([
+                '掃描時間', '跳點編號', 'IP位址', '主機名', 'RTT(ms)', '狀態'
+            ])
+            
+            for result in self.history:
+                scan_time_str = result.scan_time.strftime('%Y-%m-%d %H:%M:%S')
+                for hop in result.hops:
+                    writer.writerow([
+                        scan_time_str,
+                        hop.hop_number,
+                        hop.ip_address,
+                        hop.hostname or '',
+                        f"{hop.rtt_ms:.3f}" if hop.rtt_ms is not None else '',
+                        hop.status
+                    ])
+        
+        return str(csv_path)
     
     def _save_html_report(self):
         """儲存 HTML 報告"""
@@ -382,18 +464,298 @@ class RealtimeMonitor:
             return
         
         try:
-            from output.table_chart import TableChart
-            
-            table_chart = TableChart()
-            results = list(self.history)
-            
             filename = f"monitor_{self.target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-            html_file = table_chart.save_batch_html_report(results, filename)
+            html_file = self._create_enhanced_html_report(filename)
             
-            self.console.print(f"✅ HTML 報告已儲存: {html_file}")
+            self.console.print(f"✅ 增強版 HTML 報告已儲存: {html_file}")
             
         except Exception as e:
             self.console.print(f"❌ 儲存 HTML 失敗: {str(e)}")
+    
+    def _create_enhanced_html_report(self, filename: str) -> str:
+        """建立增強版的 HTML 報告"""
+        from pathlib import Path
+        
+        output_dir = Path("output_data/html")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        html_path = output_dir / filename
+        
+        # 計算統計數據
+        success_count = sum(1 for result in self.history if result.get_statistics()['target_reached'])
+        success_rate = (success_count / len(self.history) * 100) if self.history else 0
+        
+        # 建立 HTML 內容
+        html_content = self._generate_html_content(success_rate)
+        
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        return str(html_path)
+    
+    def _generate_html_content(self, success_rate: float) -> str:
+        """生成完整的 HTML 內容"""
+        return f"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>即時監測報告 - {self.target}:{self.port}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }}
+        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }}
+        .stat-card {{ background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #007bff; }}
+        .stat-value {{ font-size: 2em; font-weight: bold; color: #007bff; }}
+        .stat-label {{ color: #6c757d; font-size: 0.9em; }}
+        .chart-container {{ width: 100%; height: 400px; margin: 20px 0; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+        th {{ background-color: #f8f9fa; font-weight: bold; }}
+        .success {{ color: #28a745; }}
+        .failure {{ color: #dc3545; }}
+        .section {{ margin: 30px 0; }}
+        .section-title {{ font-size: 1.5em; font-weight: bold; margin-bottom: 15px; color: #333; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 即時監測報告</h1>
+            <p>目標: {self.target}:{self.port} ({self.protocol.upper()})</p>
+            <p>監測時間: {len(self.history) * self.interval / 60:.1f} 分鐘 | 生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">{self.stats.total_scans}</div>
+                <div class="stat-label">總掃描次數</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value success">{self.stats.successful_scans}</div>
+                <div class="stat-label">成功次數</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value failure">{self.stats.failed_scans}</div>
+                <div class="stat-label">失敗次數</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{success_rate:.1f}%</div>
+                <div class="stat-label">成功率</div>
+            </div>
+        </div>
+        
+        {self._generate_response_time_stats_html() if self.stats.successful_scans > 0 else ''}
+        
+        <div class="section">
+            <div class="section-title">📈 成功率趨勢圖</div>
+            <canvas id="successChart" class="chart-container"></canvas>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">⏱️ 回應時間趨勢圖</div>
+            <canvas id="rttChart" class="chart-container"></canvas>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">📋 詳細掃描記錄</div>
+            {self._generate_scan_history_table_html()}
+        </div>
+        
+        <div class="section">
+            <div class="section-title">🔍 跳點分析</div>
+            {self._generate_hop_analysis_html()}
+        </div>
+    </div>
+    
+    <script>
+        {self._generate_chart_javascript()}
+    </script>
+</body>
+</html>"""
+    
+    def _generate_response_time_stats_html(self) -> str:
+        """生成回應時間統計的 HTML"""
+        return f"""
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">{self.stats.avg_response_time:.1f}ms</div>
+                <div class="stat-label">平均回應時間</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{self.stats.min_response_time:.1f}ms</div>
+                <div class="stat-label">最小回應時間</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{self.stats.max_response_time:.1f}ms</div>
+                <div class="stat-label">最大回應時間</div>
+            </div>
+        </div>
+        """
+    
+    def _generate_scan_history_table_html(self) -> str:
+        """生成掃描歷史表格的 HTML"""
+        table_rows = []
+        for i, result in enumerate(self.history, 1):
+            stats = result.get_statistics()
+            status_class = "success" if stats['target_reached'] else "failure"
+            status_text = "✅ 成功" if stats['target_reached'] else "❌ 失敗"
+            
+            avg_rtt = f"{stats['avg_rtt']:.1f}ms" if stats['avg_rtt'] is not None else "-"
+            
+            table_rows.append(f"""
+                <tr>
+                    <td>{i}</td>
+                    <td>{result.scan_time.strftime('%H:%M:%S')}</td>
+                    <td>{stats['total_hops']}</td>
+                    <td class="{status_class}">{status_text}</td>
+                    <td>{stats['successful_hops']}</td>
+                    <td>{stats['timeout_hops']}</td>
+                    <td>{avg_rtt}</td>
+                    <td>{result.scan_duration:.1f}s</td>
+                </tr>
+            """)
+        
+        return f"""
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>掃描時間</th>
+                    <th>跳點數</th>
+                    <th>狀態</th>
+                    <th>成功跳點</th>
+                    <th>超時跳點</th>
+                    <th>平均RTT</th>
+                    <th>掃描耗時</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(table_rows)}
+            </tbody>
+        </table>
+        """
+    
+    def _generate_hop_analysis_html(self) -> str:
+        """生成跳點分析的 HTML"""
+        if not self.history:
+            return "<p>沒有數據可供分析</p>"
+        
+        # 分析每個跳點的穩定性
+        hop_stats = {}
+        for result in self.history:
+            for hop in result.hops:
+                hop_num = hop.hop_number
+                if hop_num not in hop_stats:
+                    hop_stats[hop_num] = {'ips': set(), 'success': 0, 'total': 0, 'rtts': []}
+                
+                hop_stats[hop_num]['total'] += 1
+                if hop.status == 'success':
+                    hop_stats[hop_num]['success'] += 1
+                    hop_stats[hop_num]['ips'].add(hop.ip_address)
+                    if hop.rtt_ms is not None:
+                        hop_stats[hop_num]['rtts'].append(hop.rtt_ms)
+        
+        analysis_rows = []
+        for hop_num in sorted(hop_stats.keys()):
+            stats = hop_stats[hop_num]
+            success_rate = (stats['success'] / stats['total'] * 100) if stats['total'] > 0 else 0
+            avg_rtt = sum(stats['rtts']) / len(stats['rtts']) if stats['rtts'] else 0
+            unique_ips = len(stats['ips'])
+            
+            analysis_rows.append(f"""
+                <tr>
+                    <td>{hop_num}</td>
+                    <td>{success_rate:.1f}%</td>
+                    <td>{unique_ips}</td>
+                    <td>{avg_rtt:.1f}ms</td>
+                    <td>{stats['success']}/{stats['total']}</td>
+                </tr>
+            """)
+        
+        return f"""
+        <table>
+            <thead>
+                <tr>
+                    <th>跳點</th>
+                    <th>成功率</th>
+                    <th>唯一IP數</th>
+                    <th>平均RTT</th>
+                    <th>成功/總計</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(analysis_rows)}
+            </tbody>
+        </table>
+        """
+    
+    def _generate_chart_javascript(self) -> str:
+        """生成圖表的 JavaScript 代碼"""
+        # 準備數據
+        success_data = []
+        rtt_data = []
+        labels = []
+        
+        for result in self.history:
+            labels.append(result.scan_time.strftime('%H:%M:%S'))
+            stats = result.get_statistics()
+            success_data.append(1 if stats['target_reached'] else 0)
+            rtt_data.append(stats['avg_rtt'] if stats['avg_rtt'] is not None else 0)
+        
+        return f"""
+        // 成功率圖表
+        const successCtx = document.getElementById('successChart').getContext('2d');
+        new Chart(successCtx, {{
+            type: 'line',
+            data: {{
+                labels: {labels},
+                datasets: [{{
+                    label: '成功 (1) / 失敗 (0)',
+                    data: {success_data},
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.1
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {{
+                    y: {{
+                        beginAtZero: true,
+                        max: 1
+                    }}
+                }}
+            }}
+        }});
+        
+        // 回應時間圖表
+        const rttCtx = document.getElementById('rttChart').getContext('2d');
+        new Chart(rttCtx, {{
+            type: 'line',
+            data: {{
+                labels: {labels},
+                datasets: [{{
+                    label: '平均回應時間 (ms)',
+                    data: {rtt_data},
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    tension: 0.1
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {{
+                    y: {{
+                        beginAtZero: true
+                    }}
+                }}
+            }}
+        }});
+        """
     
     def _show_detailed_history(self):
         """顯示詳細歷史"""
