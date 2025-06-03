@@ -84,6 +84,7 @@ class RealtimeMonitor:
         self.stats = MonitorStats()
         self.current_result = None
         self.scanning_in_progress = False  # 防止重疊掃描
+        self.stopping = False  # 防止重複停止
         
         # 回調函數
         self.on_scan_complete: Optional[Callable[[ScanResult], None]] = None
@@ -103,6 +104,7 @@ class RealtimeMonitor:
             return
         
         self.is_running = True
+        self.stopping = False  # 重置停止標記
         self.stats = MonitorStats()  # 重置統計
         
         logger.info(f"開始監測 {self.target}:{self.port}，間隔: {self.interval}秒")
@@ -124,15 +126,17 @@ class RealtimeMonitor:
     
     def stop_monitoring(self):
         """停止監測"""
-        self.is_running = False
-        if self.monitor_thread:
-            self.monitor_thread.join(timeout=5)
-        
-        logger.info("監測已停止")
+        if not self.stopping:
+            self.stopping = True
+            self.is_running = False
+            if self.monitor_thread:
+                self.monitor_thread.join(timeout=5)
+            
+            logger.info("監測已停止")
     
     def _monitor_loop(self):
         """監測主迴圈"""
-        while self.is_running:
+        while self.is_running and not self.stopping:
             try:
                 # 檢查是否有掃描在進行中
                 if self.scanning_in_progress:
@@ -215,7 +219,7 @@ class RealtimeMonitor:
         
         with Live(layout, refresh_per_second=1, screen=True) as live:
             try:
-                while self.is_running:
+                while self.is_running and not self.stopping:
                     # 更新介面
                     layout["header"].update(self._create_header_panel())
                     layout["current"].update(self._create_current_result_panel())
@@ -225,8 +229,16 @@ class RealtimeMonitor:
                     time.sleep(1)
                     
             except KeyboardInterrupt:
-                self.stop_monitoring()
-                self._show_exit_options()
+                if not self.stopping:
+                    self.stopping = True
+                    self.console.print("\n⏹️  正在停止監測，請稍候...")
+                    self.stop_monitoring()
+                    self._show_exit_options()
+                else:
+                    # 第二次 Ctrl+C，強制退出
+                    self.console.print("\n🚨 強制退出監測")
+                    self.stop_monitoring()
+                    sys.exit(0)
     
     def _create_header_panel(self) -> Panel:
         """建立標題面板"""
@@ -291,6 +303,7 @@ class RealtimeMonitor:
             "🎛️  控制選項:",
             "",
             "Ctrl+C - 停止監測並顯示選項",
+            "Ctrl+C 兩次 - 強制退出程式",
             "在監測結束後，您可以選擇:",
             "• 儲存 CSV 報告",
             "• 儲存 HTML 報告",
