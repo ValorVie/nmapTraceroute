@@ -87,8 +87,7 @@ class RealtimeMonitor:
         self.current_result = None
         self.scanning_in_progress = False  # 防止重疊掃描
         self.stopping = False  # 防止重複停止
-        
-        # 回調函數
+          # 回調函數
         self.on_scan_complete: Optional[Callable[[ScanResult], None]] = None
         self.on_status_change: Optional[Callable[[bool], None]] = None
         
@@ -120,11 +119,8 @@ class RealtimeMonitor:
         
         # 如果需要顯示即時介面
         if display_live:
-            try:
-                self._display_live_interface()
-            except KeyboardInterrupt:
-                self.stop_monitoring()
-                self._show_exit_options()
+            self._display_live_interface()
+            # 注意：_display_live_interface 現在會處理 Ctrl+C 和顯示退出選項
     
     def stop_monitoring(self):
         """停止監測"""
@@ -196,8 +192,7 @@ class RealtimeMonitor:
                 avg_rtt = scan_stats['avg_rtt']
                 self.stats.min_response_time = min(self.stats.min_response_time, avg_rtt)
                 self.stats.max_response_time = max(self.stats.max_response_time, avg_rtt)
-                
-                # 計算總體平均回應時間
+                  # 計算總體平均回應時間
                 total_successful = self.stats.successful_scans
                 current_avg = self.stats.avg_response_time
                 self.stats.avg_response_time = ((current_avg * (total_successful - 1)) + avg_rtt) / total_successful
@@ -219,28 +214,52 @@ class RealtimeMonitor:
             Layout(name="stats", ratio=1)
         )
         
-        with Live(layout, refresh_per_second=1, screen=True) as live:
-            try:
+        ctrl_c_count = 0
+        
+        try:
+            with Live(layout, refresh_per_second=1, screen=True) as live:
                 while self.is_running and not self.stopping:
-                    # 更新介面
-                    layout["header"].update(self._create_header_panel())
-                    layout["current"].update(self._create_current_result_panel())
-                    layout["stats"].update(self._create_stats_panel())
-                    layout["footer"].update(self._create_controls_panel())
-                    
-                    time.sleep(1)
-                    
-            except KeyboardInterrupt:
-                if not self.stopping:
-                    self.stopping = True
-                    self.console.print("\n⏹️  正在停止監測，請稍候...")
-                    self.stop_monitoring()
-                    self._show_exit_options()
-                else:
-                    # 第二次 Ctrl+C，強制退出
-                    self.console.print("\n🚨 強制退出監測")
-                    self.stop_monitoring()
-                    sys.exit(0)
+                    try:
+                        # 更新介面
+                        layout["header"].update(self._create_header_panel())
+                        layout["current"].update(self._create_current_result_panel())
+                        layout["stats"].update(self._create_stats_panel())
+                        layout["footer"].update(self._create_controls_panel())
+                        
+                        time.sleep(1)
+                        
+                    except KeyboardInterrupt:
+                        ctrl_c_count += 1
+                        if ctrl_c_count == 1:
+                            # 第一次 Ctrl+C，優雅停止
+                            if not self.stopping:
+                                self.stopping = True
+                                live.stop()  # 立即停止 Live 介面
+                                break
+                        else:
+                            # 第二次 Ctrl+C，強制退出
+                            self.console.print("\n🚨 強制退出監測")
+                            self.stop_monitoring()
+                            sys.exit(0)
+                            
+        except KeyboardInterrupt:
+            # 處理在 Live 上下文外的 Ctrl+C
+            ctrl_c_count += 1
+            if ctrl_c_count == 1 and not self.stopping:
+                self.stopping = True
+            elif ctrl_c_count >= 2:
+                self.console.print("\n🚨 強制退出監測")
+                self.stop_monitoring()
+                sys.exit(0)
+        
+        # 確保在退出 Live 介面後執行停止和選項顯示
+        if self.stopping and not self.is_running == False:
+            self.console.print("\n⏹️  正在停止監測，請稍候...")
+            self.stop_monitoring()
+        
+        # 顯示退出選項（只有在第一次 Ctrl+C 時）
+        if ctrl_c_count == 1:
+            self._show_exit_options()
     
     def _create_header_panel(self) -> Panel:
         """建立標題面板"""
@@ -303,12 +322,10 @@ class RealtimeMonitor:
         """建立控制面板"""
         controls = [
             "🎛️  控制選項:",
-            "Ctrl+C 兩次 - 停止監測並顯示選項",
-            "Ctrl+C 三次 - 強制退出程式",
-            "在監測結束後，您可以選擇:",
-            "• 儲存 CSV 報告",
-            "• 儲存 HTML 報告",
-            "• 查看詳細統計",
+            "",
+            "Ctrl+C - 停止監測並顯示選項",
+            "Ctrl+C 兩次 - 強制退出程式",
+            "在監測結束後，您可以選擇:「儲存 CSV 報告」、「儲存 HTML 報告」、「查看詳細統計」",
             "",
             f"📊 監測間隔: {self.interval}秒 | 歷史記錄: {len(self.history)}/{self.max_history}",
             f"⚠️  建議間隔 ≥ 10秒 (nmap 掃描約需 5-8秒)",
@@ -382,8 +399,8 @@ class RealtimeMonitor:
         output_dir = Path("output_data/csv")
         output_dir.mkdir(parents=True, exist_ok=True)
         csv_path = output_dir / filename
-        
-        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+
+        with open(csv_path, 'w', newline='', encoding='utf-8 with BOM') as f:
             writer = csv.writer(f)
             
             # 寫入監測摘要資訊
