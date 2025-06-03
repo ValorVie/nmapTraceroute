@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 # 基本設定
-DEFAULT_PROTOCOL = "tcp"
-DEFAULT_PORT = 80
+DEFAULT_PROTOCOL = "udp"
+DEFAULT_PORT = 33434
 DEFAULT_MAX_HOPS = 30
 DEFAULT_TIMEOUT = 30
 
