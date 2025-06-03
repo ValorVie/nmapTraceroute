@@ -626,16 +626,17 @@ class RealtimeMonitor:
             <div class="section-title">⏱️ 回應時間趨勢圖</div>
             <canvas id="rttChart" class="chart-container"></canvas>
         </div>
+
+        <div class="section">
+            <div class="section-title">🔍 跳點分析</div>
+            {self._generate_hop_analysis_html()}
+        </div>
         
         <div class="section">
             <div class="section-title">📋 詳細掃描記錄</div>
             {self._generate_scan_history_table_html()}
         </div>
         
-        <div class="section">
-            <div class="section-title">🔍 跳點分析</div>
-            {self._generate_hop_analysis_html()}
-        </div>
     </div>
     
     <script>
@@ -790,7 +791,9 @@ class RealtimeMonitor:
             }},
             options: {{
                 responsive: true,
-                maintainAspectRatio: false,
+                maintainAspectRatio: true,
+                aspectRatio: 2,
+                animation: {{ duration: 0 }},
                 scales: {{
                     y: {{
                         beginAtZero: true,
@@ -816,7 +819,9 @@ class RealtimeMonitor:
             }},
             options: {{
                 responsive: true,
-                maintainAspectRatio: false,
+                maintainAspectRatio: true,
+                aspectRatio: 2,
+                animation: {{ duration: 0 }},
                 scales: {{
                     y: {{
                         beginAtZero: true
