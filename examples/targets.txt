@@ -1,0 +1,18 @@
+# 範例目標檔案
+# 這是用於批量掃描的目標清單
+# 以 # 開頭的行會被忽略
+
+# DNS 服務器
+8.8.8.8
+1.1.1.1
+208.67.222.222
+
+# 常用網站
+google.com
+github.com
+stackoverflow.com
+microsoft.com
+
+# 台灣相關
+hinet.net
+pchome.com.tw
