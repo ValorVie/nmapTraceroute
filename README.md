@@ -32,11 +32,14 @@ brew install nmap
 
 ### 安裝 Python 依賴
 ```bash
-# 安裝專案依賴
-pip install -r requirements.txt
+# 使用 uv 安裝專案依賴 (推薦)
+uv add rich click pandas tabulate pydantic loguru
 
-# 或使用 uv (推薦)
-uv pip install -e .
+# 或者使用 uv sync
+uv sync
+
+# 傳統方式 (如果不使用 uv)
+pip install -r requirements.txt
 ```
 
 ## 快速開始
@@ -45,22 +48,22 @@ uv pip install -e .
 
 ```bash
 # 基本使用 - 掃描單一目標
-python main.py -t 211.75.74.41 -p 443 --protocol tcp
+uv run python main.py -t 211.75.74.41 -p 443 --protocol tcp
 
 # 掃描多個端口
-python main.py -t example.com -p 80,443,22 --show-chart
+uv run python main.py -t example.com -p 80,443,22 --show-chart
 
 # 批量掃描
-python main.py -f targets.txt --output-csv results.csv
+uv run python main.py -f targets.txt --output-csv results.csv
 
 # UDP 掃描
-python main.py -t 8.8.8.8 -p 53 --protocol udp
+uv run python main.py -t 8.8.8.8 -p 53 --protocol udp
 
 # 儲存 HTML 報告
-python main.py -t github.com -p 443 --save-html --show-chart
+uv run python main.py -t github.com -p 443 --save-html --show-chart
 
 # 測試 nmap 安裝
-python main.py --test-nmap
+uv run python main.py --test-nmap
 ```
 
 ### 程式化使用
@@ -95,7 +98,7 @@ table_chart.display_scan_result(result)
 ## 命令列選項
 
 ```
-Usage: python main.py [OPTIONS]
+Usage: uv run python main.py [OPTIONS]
 
 Options:
   -t, --target TEXT          目標主機 (IP 或域名)
@@ -160,7 +163,7 @@ nmapTraceroute/
 
 ```bash
 # 範例: 追蹤到 Google DNS 的路徑
-python main.py -t 8.8.8.8 -p 53 --protocol tcp --show-chart
+uv run python main.py -t 8.8.8.8 -p 53 --protocol tcp --show-chart
 ```
 
 輸出：
@@ -194,21 +197,21 @@ github.com
 
 執行批量掃描:
 ```bash
-python main.py -f targets.txt -p 443 --output-csv batch_results.csv --show-chart
+uv run python main.py -f targets.txt -p 443 --output-csv batch_results.csv --show-chart
 ```
 
 ### 3. UDP Traceroute
 
 ```bash
 # UDP 掃描 DNS 服務
-python main.py -t 8.8.8.8 -p 53 --protocol udp --timeout 60
+uv run python main.py -t 8.8.8.8 -p 53 --protocol udp --timeout 60
 ```
 
 ### 4. 多端口掃描
 
 ```bash
 # 掃描常見服務端口
-python main.py -t example.com -p 22,80,443 --save-html
+uv run python main.py -t example.com -p 22,80,443 --save-html
 ```
 
 ## 輸出格式
@@ -294,10 +297,10 @@ except Exception as e:
 
 ```bash
 # 啟用詳細輸出
-python main.py -t example.com -p 80 --verbose
+uv run python main.py -t example.com -p 80 --verbose
 
 # 測試 nmap 功能
-python main.py --test-nmap
+uv run python main.py --test-nmap
 ```
 
 ## 開發
@@ -306,13 +309,13 @@ python main.py --test-nmap
 
 ```bash
 # 安裝開發依賴
-pip install -e ".[dev]"
+uv add --dev pytest pytest-cov black isort mypy
 
 # 執行測試
-pytest tests/
+uv run pytest tests/
 
 # 執行範例
-python examples/basic_usage.py
+uv run python examples/basic_usage.py
 ```
 
 ### 貢獻指南
