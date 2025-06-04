@@ -427,10 +427,9 @@ class RealtimeMonitor:
         left_controls = [
             "🎛️  控制選項:",
             "",
-            "Ctrl+C - 停止監測並顯示選項",
+            "Ctrl+C - 停止監測並顯示儲存選項",
             "Ctrl+C 兩次 - 強制退出程式",
-            "在監測結束後，您可以選擇:",
-            "「儲存 CSV 報告」、「儲存 HTML 報告」、「查看詳細統計」",
+            "儲存選項： CSV, HTML",
         ]
 
         # 右側狀態資訊
@@ -440,7 +439,6 @@ class RealtimeMonitor:
             f"監測間隔: {self.interval}秒",
             f"歷史記錄: {len(self.history)}/{self.max_history if self.max_history > 0 else '無限制'}",
             f"掃描狀態: {'進行中' if self.scanning_in_progress else '等待中'}",
-            "⚠️  建議間隔 ≥ 10秒 (nmap 掃描約需 5-8秒)",
         ]
         # 創建左右分欄
         left_text = "\n".join(left_controls)
