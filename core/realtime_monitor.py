@@ -258,7 +258,9 @@ class RealtimeMonitor:
                 sys.exit(0)
         
         # 確保在退出 Live 介面後執行停止和選項顯示
-        if self.stopping and not self.is_running == False:
+        # 原條件式 ``not self.is_running == False`` 等價於 ``self.is_running``，
+        # 但可讀性較差。改為直接判斷 ``self.is_running`` 以避免混淆。
+        if self.stopping and self.is_running:
             self.console.print("\n⏹️  正在停止監測，請稍候...")
             self.stop_monitoring()
         

@@ -3,6 +3,7 @@
 """
 import re
 import socket
+import ipaddress
 from typing import List, Union
 from pathlib import Path
 
@@ -18,9 +19,9 @@ def is_valid_ip(ip_address: str) -> bool:
         是否為有效的 IP 地址
     """
     try:
-        socket.inet_aton(ip_address)
+        ipaddress.IPv4Address(ip_address)
         return True
-    except socket.error:
+    except ipaddress.AddressValueError:
         return False
 
 

@@ -73,7 +73,9 @@ class NmapExecutor:
         Returns:
             nmap 命令列表
         """
-        cmd = [self.nmap_path or "nmap"]
+        # 為了保持輸出一致以及方便測試，建構命令時固定使用 `nmap` 作為
+        # 執行名稱，實際執行時仍會在 `execute_scan` 中使用完整路徑。
+        cmd = ["nmap"]
         
         # 端口參數
         if len(ports) == 1:
