@@ -2,6 +2,7 @@
 即時監測器
 提供持續監控網路狀態的功能
 """
+
 import time
 import threading
 import sys
@@ -13,10 +14,14 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from pathlib import Path
 
 from config.default_settings import (
-    DEFAULT_PORT, DEFAULT_PROTOCOL, DEFAULT_TIMEOUT,
-    DEFAULT_MONITOR_INTERVAL, DEFAULT_MAX_HISTORY
+    DEFAULT_PORT,
+    DEFAULT_PROTOCOL,
+    DEFAULT_TIMEOUT,
+    DEFAULT_MONITOR_INTERVAL,
+    DEFAULT_MAX_HISTORY,
 )
 from rich.layout import Layout
 from rich.live import Live
@@ -32,23 +37,28 @@ from output.csv_writer import CSVWriter
 @dataclass
 class MonitorStats:
     """監測統計資料"""
+
     total_scans: int = 0
     successful_scans: int = 0
     failed_scans: int = 0
     avg_response_time: float = 0.0
-    min_response_time: float = float('inf')
+    min_response_time: float = float("inf")
     max_response_time: float = 0.0
     last_scan_time: Optional[datetime] = None
-    
+
     @property
     def success_rate(self) -> float:
         """成功率"""
-        return (self.successful_scans / self.total_scans * 100) if self.total_scans > 0 else 0.0
+        return (
+            (self.successful_scans / self.total_scans * 100)
+            if self.total_scans > 0
+            else 0.0
+        )
 
 
 class RealtimeMonitor:
     """即時監測器"""
-    
+
     def __init__(
         self,
         target: str,
@@ -56,11 +66,11 @@ class RealtimeMonitor:
         protocol: str = DEFAULT_PROTOCOL,
         interval: int = DEFAULT_MONITOR_INTERVAL,
         max_history: int = DEFAULT_MAX_HISTORY,
-        timeout: int = DEFAULT_TIMEOUT
+        timeout: int = DEFAULT_TIMEOUT,
     ):
         """
         初始化即時監測器
-        
+
         Args:
             target: 目標主機
             port: 目標端口
@@ -75,15 +85,13 @@ class RealtimeMonitor:
         self.interval = interval
         self.max_history = max_history
         self.timeout = timeout
-        
+
         # 初始化組件
         self.scanner = TracerouteScanner(
-            protocol=protocol,
-            timeout=timeout,
-            verbose=False
+            protocol=protocol, timeout=timeout, verbose=False
         )
         self.console = Console()
-        
+
         # 監測狀態
         self.is_running = False
         self.monitor_thread = None
@@ -92,41 +100,43 @@ class RealtimeMonitor:
         self.current_result = None
         self.scanning_in_progress = False  # 防止重疊掃描
         self.stopping = False  # 防止重複停止
-          # 回調函數
+
+        # 日誌配置管理
+        self._original_logger_config = None
+        self._live_mode_active = False
+
+        # 回調函數
         self.on_scan_complete: Optional[Callable[[ScanResult], None]] = None
         self.on_status_change: Optional[Callable[[bool], None]] = None
-        
+
         logger.info(f"即時監測器初始化完成，目標: {target}:{port}")
-    
+
     def start_monitoring(self, display_live: bool = True):
         """
         開始監測
-        
+
         Args:
             display_live: 是否顯示即時介面
         """
         if self.is_running:
             logger.warning("監測已在運行中")
             return
-        
+
         self.is_running = True
         self.stopping = False  # 重置停止標記
         self.stats = MonitorStats()  # 重置統計
-        
+
         logger.info(f"開始監測 {self.target}:{self.port}，間隔: {self.interval}秒")
-        
+
         # 啟動監測執行緒
-        self.monitor_thread = threading.Thread(
-            target=self._monitor_loop,
-            daemon=True
-        )
+        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
-        
+
         # 如果需要顯示即時介面
         if display_live:
             self._display_live_interface()
             # 注意：_display_live_interface 現在會處理 Ctrl+C 和顯示退出選項
-    
+
     def stop_monitoring(self):
         """停止監測"""
         if not self.stopping:
@@ -134,9 +144,13 @@ class RealtimeMonitor:
             self.is_running = False
             if self.monitor_thread:
                 self.monitor_thread.join(timeout=5)
-            
+
+            # 如果還在即時模式，恢復正常日誌配置
+            if self._live_mode_active:
+                self._restore_normal_logging()
+
             logger.info("監測已停止")
-    
+
     def _monitor_loop(self):
         """監測主迴圈"""
         while self.is_running and not self.stopping:
@@ -146,81 +160,91 @@ class RealtimeMonitor:
                     logger.warning("上次掃描尚未完成，跳過本次掃描")
                     time.sleep(self.interval)
                     continue
-                
+
                 # 設置掃描標記
                 self.scanning_in_progress = True
-                
+
                 # 執行掃描
                 start_time = time.time()
                 result = self.scanner.scan_target(self.target, self.port)
                 scan_duration = time.time() - start_time
-                
+
                 # 更新統計
                 self._update_stats(result, scan_duration)
-                
+
                 # 加入歷史記錄
                 self.history.append(result)
                 self.current_result = result
-                
+
                 # 觸發回調
                 if self.on_scan_complete:
                     self.on_scan_complete(result)
-                
+
                 # 清除掃描標記
                 self.scanning_in_progress = False
-                
+
                 # 計算實際等待時間（間隔 - 掃描時間）
                 actual_wait = max(0, self.interval - scan_duration)
                 if actual_wait > 0:
                     time.sleep(actual_wait)
                 else:
-                    logger.warning(f"掃描時間 ({scan_duration:.1f}s) 超過設定間隔 ({self.interval}s)")
-                
+                    logger.warning(
+                        f"掃描時間 ({scan_duration:.1f}s) 超過設定間隔 ({self.interval}s)"
+                    )
+
             except Exception as e:
                 logger.error(f"監測迴圈錯誤: {str(e)}")
                 self.stats.failed_scans += 1
                 self.scanning_in_progress = False
                 time.sleep(self.interval)
-    
+
     def _update_stats(self, result: ScanResult, scan_duration: float):
         """更新統計資料"""
         self.stats.total_scans += 1
         self.stats.last_scan_time = datetime.now()
-        
+
         # 檢查是否成功
         scan_stats = result.get_statistics()
-        if scan_stats['target_reached']:
+        if scan_stats["target_reached"]:
             self.stats.successful_scans += 1
-            
+
             # 更新回應時間統計
-            if scan_stats['avg_rtt'] is not None:
-                avg_rtt = scan_stats['avg_rtt']
-                self.stats.min_response_time = min(self.stats.min_response_time, avg_rtt)
-                self.stats.max_response_time = max(self.stats.max_response_time, avg_rtt)
-                  # 計算總體平均回應時間
+            if scan_stats["avg_rtt"] is not None:
+                avg_rtt = scan_stats["avg_rtt"]
+                self.stats.min_response_time = min(
+                    self.stats.min_response_time, avg_rtt
+                )
+                self.stats.max_response_time = max(
+                    self.stats.max_response_time, avg_rtt
+                )
+                # 計算總體平均回應時間
                 total_successful = self.stats.successful_scans
                 current_avg = self.stats.avg_response_time
-                self.stats.avg_response_time = ((current_avg * (total_successful - 1)) + avg_rtt) / total_successful
+                self.stats.avg_response_time = (
+                    (current_avg * (total_successful - 1)) + avg_rtt
+                ) / total_successful
         else:
             self.stats.failed_scans += 1
-    
+
     def _display_live_interface(self):
         """顯示即時監測介面"""
+        # 在開始即時介面前配置日誌輸出
+        self._setup_live_mode_logging()
+
         layout = Layout()
-        
+
         layout.split_column(
             Layout(name="header", size=3),
             Layout(name="main"),
-            Layout(name="footer", size=8)
+            Layout(name="footer", size=8),
         )
-        
+
         layout["main"].split_row(
-            Layout(name="current", ratio=2),
-            Layout(name="stats", ratio=1)
+            Layout(name="current", ratio=2), Layout(name="stats", ratio=1)
         )
-        
+
         ctrl_c_count = 0
-        
+
         try:
             with Live(layout, refresh_per_second=1, screen=True) as live:
                 while self.is_running and not self.stopping:
@@ -230,9 +254,9 @@ class RealtimeMonitor:
                         layout["current"].update(self._create_current_result_panel())
                         layout["stats"].update(self._create_stats_panel())
                         layout["footer"].update(self._create_controls_panel())
-                        
+
                         time.sleep(1)
-                        
+
                     except KeyboardInterrupt:
                         ctrl_c_count += 1
                         if ctrl_c_count == 1:
@@ -246,7 +270,7 @@ class RealtimeMonitor:
                             self.console.print("\n🚨 強制退出監測")
                             self.stop_monitoring()
                             sys.exit(0)
-                            
+
         except KeyboardInterrupt:
             # 處理在 Live 上下文外的 Ctrl+C
             ctrl_c_count += 1
@@ -256,79 +280,149 @@ class RealtimeMonitor:
                 self.console.print("\n🚨 強制退出監測")
                 self.stop_monitoring()
                 sys.exit(0)
-        
+        finally:
+            # 無論如何都要恢復日誌配置
+            self._restore_normal_logging()
+
         # 確保在退出 Live 介面後執行停止和選項顯示
         # 原條件式 ``not self.is_running == False`` 等價於 ``self.is_running``，
         # 但可讀性較差。改為直接判斷 ``self.is_running`` 以避免混淆。
         if self.stopping and self.is_running:
             self.console.print("\n⏹️  正在停止監測，請稍候...")
             self.stop_monitoring()
-        
+
         # 顯示退出選項（只有在第一次 Ctrl+C 時）
         if ctrl_c_count == 1:
             self._show_exit_options()
-    
+
+    def _setup_live_mode_logging(self):
+        """設置即時模式的日誌配置 - 重定向到檔案"""
+        if self._live_mode_active:
+            return  # 已經在即時模式中
+
+        try:
+            # 儲存當前的 handler ID（如果有的話）
+            self._original_logger_config = (
+                list(logger._core.handlers.keys()) if hasattr(logger, "_core") else []
+            )
+
+            # 移除所有終端輸出的 handler
+            logger.remove()
+
+            # 創建日誌目錄
+            log_dir = Path("output_data/logs")
+            log_dir.mkdir(exist_ok=True)
+
+            # 添加檔案日誌輸出
+            log_file = (
+                log_dir
+                / f"realtime_monitor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            )
+            logger.add(
+                log_file,
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+                level="DEBUG",
+                rotation="10 MB",
+                retention="7 days",
+                encoding="utf-8",
+            )
+
+            self._live_mode_active = True
+
+        except Exception as e:
+            # 如果設置失敗，至少確保有基本的日誌輸出
+            if not logger._core.handlers:
+                logger.add(sys.stderr, level="WARNING")
+            logger.warning(f"設置即時模式日誌失敗: {e}")
+
+    def _restore_normal_logging(self):
+        """恢復正常的日誌配置"""
+        if not self._live_mode_active:
+            return  # 不在即時模式中
+
+        try:
+            # 移除檔案日誌 handler
+            logger.remove()
+
+            # 恢復標準終端輸出
+            logger.add(
+                sys.stderr,
+                format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+                level="INFO",
+            )
+
+            self._live_mode_active = False
+
+        except Exception as e:
+            # 確保至少有基本的日誌輸出
+            if not logger._core.handlers:
+                logger.add(sys.stderr, level="WARNING")
+            logger.warning(f"恢復正常日誌配置失敗: {e}")
+
     def _create_header_panel(self) -> Panel:
         """建立標題面板"""
         title = f"即時監測 - {self.target}:{self.port} ({self.protocol.upper()})"
         status = "🟢 運行中" if self.is_running else "🔴 已停止"
-        
+
         header_text = f"{title} | {status}"
         if self.stats.last_scan_time:
-            header_text += f" | 最後掃描: {self.stats.last_scan_time.strftime('%H:%M:%S')}"
-        
+            header_text += (
+                f" | 最後掃描: {self.stats.last_scan_time.strftime('%H:%M:%S')}"
+            )
+
         return Panel(header_text, style="bold blue")
-    
+
     def _create_current_result_panel(self) -> Panel:
         """建立當前結果面板"""
         if not self.current_result:
             return Panel("等待第一次掃描結果...", title="當前狀態")
-        
+
         # 建立跳點表格
         table = Table(box=box.SIMPLE)
         table.add_column("跳點", justify="center", style="cyan", width=6)
         table.add_column("IP 位址", style="green", width=16)
         table.add_column("回應時間", justify="right", style="yellow", width=12)
         table.add_column("狀態", justify="center", width=10)
-        
+
         for hop in self.current_result.hops:
             status_style = "green" if hop.status == "success" else "red"
             rtt_str = f"{hop.rtt_ms:.1f}ms" if hop.rtt_ms is not None else "*"
-            
+
             table.add_row(
                 str(hop.hop_number),
                 hop.ip_address,
                 rtt_str,
-                Text(hop.status, style=status_style)
+                Text(hop.status, style=status_style),
             )
-        
+
         scan_stats = self.current_result.get_statistics()
-        status = "✅ 可達" if scan_stats['target_reached'] else "❌ 不可達"
-        
+        status = "✅ 可達" if scan_stats["target_reached"] else "❌ 不可達"
+
         return Panel(table, title=f"路由追蹤結果 ({status})")
-    
+
     def _create_stats_panel(self) -> Panel:
         """建立統計面板"""
         stats_table = Table(box=box.SIMPLE, show_header=False)
         stats_table.add_column("項目", style="bold cyan")
         stats_table.add_column("數值", style="white")
-        
+
         stats_table.add_row("總掃描次數", str(self.stats.total_scans))
         stats_table.add_row("成功次數", str(self.stats.successful_scans))
         stats_table.add_row("失敗次數", str(self.stats.failed_scans))
         stats_table.add_row("成功率", f"{self.stats.success_rate:.1f}%")
-        
+
         if self.stats.successful_scans > 0:
             stats_table.add_row("平均回應", f"{self.stats.avg_response_time:.1f}ms")
             stats_table.add_row("最小回應", f"{self.stats.min_response_time:.1f}ms")
             stats_table.add_row("最大回應", f"{self.stats.max_response_time:.1f}ms")
-        
+
         return Panel(stats_table, title="統計資訊")
+
     def _create_controls_panel(self) -> Panel:
         """建立控制面板"""
         from rich.columns import Columns
         from rich.align import Align
-        
+
         # 左側控制選項
         left_controls = [
             "🎛️  控制選項:",
@@ -336,9 +430,9 @@ class RealtimeMonitor:
             "Ctrl+C - 停止監測並顯示選項",
             "Ctrl+C 兩次 - 強制退出程式",
             "在監測結束後，您可以選擇:",
-            "「儲存 CSV 報告」、「儲存 HTML 報告」、「查看詳細統計」"
+            "「儲存 CSV 報告」、「儲存 HTML 報告」、「查看詳細統計」",
         ]
-        
+
         # 右側狀態資訊
         right_info = [
             "📊 監測資訊:",
@@ -346,48 +440,50 @@ class RealtimeMonitor:
             f"監測間隔: {self.interval}秒",
             f"歷史記錄: {len(self.history)}/{self.max_history if self.max_history > 0 else '無限制'}",
             f"掃描狀態: {'進行中' if self.scanning_in_progress else '等待中'}",
-            "⚠️  建議間隔 ≥ 10秒 (nmap 掃描約需 5-8秒)"
+            "⚠️  建議間隔 ≥ 10秒 (nmap 掃描約需 5-8秒)",
         ]
-          # 創建左右分欄
+        # 創建左右分欄
         left_text = "\n".join(left_controls)
         right_text = "\n".join(right_info)
-        
+
         # 使用 Align.right 包裝整個右側內容
         right_aligned = Align.right(right_text)
-        
+
         columns = Columns([left_text, right_aligned], equal=True, expand=True)
-        
+
         return Panel(columns, title="說明")
-    
+
     def _show_exit_options(self):
         """顯示退出選項"""
         self.console.clear()
-        
+
         # 顯示最終統計
-        self.console.print("\n" + "="*60)
+        self.console.print("\n" + "=" * 60)
         self.console.print("📊 監測完成統計報告", style="bold blue")
-        self.console.print("="*60)
-        
+        self.console.print("=" * 60)
+
         self.console.print(f"目標: {self.target}:{self.port}")
-        self.console.print(f"監測時間: {len(self.history) * self.interval / 60:.1f} 分鐘")
+        self.console.print(
+            f"監測時間: {len(self.history) * self.interval / 60:.1f} 分鐘"
+        )
         self.console.print(f"總掃描: {self.stats.total_scans} 次")
         self.console.print(f"成功率: {self.stats.success_rate:.1f}%")
-        
+
         if self.stats.successful_scans > 0:
             self.console.print(f"平均回應時間: {self.stats.avg_response_time:.1f}ms")
-        
+
         # 提供選項
         self.console.print("\n📁 儲存選項:")
-        
+
         while True:
             self.console.print("\n請選擇操作:")
             self.console.print("1. 儲存 CSV 報告")
             self.console.print("2. 儲存 HTML 報告")
             self.console.print("3. 查看詳細歷史")
             self.console.print("4. 結束程式")
-            
+
             choice = input("\n請輸入選擇 (1-4): ").strip()
-            
+
             if choice == "1":
                 self._save_csv_report()
             elif choice == "2":
@@ -399,170 +495,239 @@ class RealtimeMonitor:
                 break
             else:
                 self.console.print("❌ 無效選擇，請重新輸入")
-    
+
     def _save_csv_report(self):
         """儲存 CSV 報告"""
         if not self.history:
             self.console.print("❌ 沒有資料可以儲存")
             return
-        
+
         try:
             # 建立增強版的 CSV 報告
-            filename = f"monitor_{self.target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            filename = (
+                f"monitor_{self.target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            )
             csv_file = self._create_enhanced_csv_report(filename)
-            
+
             self.console.print(f"✅ 增強版 CSV 報告已儲存: {csv_file}")
-            
+
         except Exception as e:
             self.console.print(f"❌ 儲存 CSV 失敗: {str(e)}")
-    
+
     def _create_enhanced_csv_report(self, filename: str) -> str:
         """建立增強版的 CSV 報告"""
         import csv
         from pathlib import Path
-        
+
         output_dir = Path("output_data/csv")
         output_dir.mkdir(parents=True, exist_ok=True)
         csv_path = output_dir / filename
 
-        with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
+        with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            
+
             # 寫入監測摘要資訊
-            writer.writerow(['=== 即時監測報告 ==='])
-            writer.writerow(['目標', self.target])
-            writer.writerow(['端口', self.port])
-            writer.writerow(['協定', self.protocol.upper()])
-            writer.writerow(['監測間隔', f'{self.interval} 秒'])
-            writer.writerow(['監測時間', f'{len(self.history) * self.interval / 60:.1f} 分鐘'])
-            writer.writerow(['生成時間', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+            writer.writerow(["=== 即時監測報告 ==="])
+            writer.writerow(["目標", self.target])
+            writer.writerow(["端口", self.port])
+            writer.writerow(["協定", self.protocol.upper()])
+            writer.writerow(["監測間隔", f"{self.interval} 秒"])
+            writer.writerow(
+                ["監測時間", f"{len(self.history) * self.interval / 60:.1f} 分鐘"]
+            )
+            writer.writerow(["生成時間", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
             writer.writerow([])
-            
+
             # 寫入統計摘要
-            writer.writerow(['=== 統計摘要 ==='])
-            writer.writerow(['項目', '數值'])
-            writer.writerow(['總掃描次數', self.stats.total_scans])
-            writer.writerow(['成功次數', self.stats.successful_scans])
-            writer.writerow(['失敗次數', self.stats.failed_scans])
-            writer.writerow(['成功率', f'{self.stats.success_rate:.1f}%'])
-            
+            writer.writerow(["=== 統計摘要 ==="])
+            writer.writerow(["項目", "數值"])
+            writer.writerow(["總掃描次數", self.stats.total_scans])
+            writer.writerow(["成功次數", self.stats.successful_scans])
+            writer.writerow(["失敗次數", self.stats.failed_scans])
+            writer.writerow(["成功率", f"{self.stats.success_rate:.1f}%"])
+
             if self.stats.successful_scans > 0:
-                writer.writerow(['平均回應時間', f'{self.stats.avg_response_time:.3f} ms'])
-                writer.writerow(['最小回應時間', f'{self.stats.min_response_time:.3f} ms'])
-                writer.writerow(['最大回應時間', f'{self.stats.max_response_time:.3f} ms'])
-            
+                writer.writerow(
+                    ["平均回應時間", f"{self.stats.avg_response_time:.3f} ms"]
+                )
+                writer.writerow(
+                    ["最小回應時間", f"{self.stats.min_response_time:.3f} ms"]
+                )
+                writer.writerow(
+                    ["最大回應時間", f"{self.stats.max_response_time:.3f} ms"]
+                )
+
             writer.writerow([])
-            
+
             # 寫入詳細記錄標題
-            writer.writerow(['=== 詳細掃描記錄 ==='])
-            writer.writerow([
-                '掃描時間', '目標', '端口', '協定', '跳點數', '目標可達',
-                '成功跳點', '超時跳點', '平均RTT(ms)', '最小RTT(ms)', '最大RTT(ms)', '掃描耗時(s)'
-            ])
-            
+            writer.writerow(["=== 詳細掃描記錄 ==="])
+            writer.writerow(
+                [
+                    "掃描時間",
+                    "目標",
+                    "端口",
+                    "協定",
+                    "跳點數",
+                    "目標可達",
+                    "成功跳點",
+                    "超時跳點",
+                    "平均RTT(ms)",
+                    "最小RTT(ms)",
+                    "最大RTT(ms)",
+                    "掃描耗時(s)",
+                ]
+            )
+
             # 寫入每次掃描的詳細資料
             for result in self.history:
                 stats = result.get_statistics()
-                writer.writerow([
-                    result.scan_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    result.target,
-                    result.port,
-                    result.protocol.upper(),
-                    stats['total_hops'],
-                    '是' if stats['target_reached'] else '否',
-                    stats['successful_hops'],
-                    stats['timeout_hops'],
-                    f"{stats['avg_rtt']:.3f}" if stats['avg_rtt'] is not None else '',
-                    f"{stats['min_rtt']:.3f}" if stats['min_rtt'] is not None else '',
-                    f"{stats['max_rtt']:.3f}" if stats['max_rtt'] is not None else '',
-                    f"{result.scan_duration:.2f}" if result.scan_duration else ''
-                ])
-        
-            
+                writer.writerow(
+                    [
+                        result.scan_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        result.target,
+                        result.port,
+                        result.protocol.upper(),
+                        stats["total_hops"],
+                        "是" if stats["target_reached"] else "否",
+                        stats["successful_hops"],
+                        stats["timeout_hops"],
+                        (
+                            f"{stats['avg_rtt']:.3f}"
+                            if stats["avg_rtt"] is not None
+                            else ""
+                        ),
+                        (
+                            f"{stats['min_rtt']:.3f}"
+                            if stats["min_rtt"] is not None
+                            else ""
+                        ),
+                        (
+                            f"{stats['max_rtt']:.3f}"
+                            if stats["max_rtt"] is not None
+                            else ""
+                        ),
+                        f"{result.scan_duration:.2f}" if result.scan_duration else "",
+                    ]
+                )
+
             writer.writerow([])
-            
+
             # 寫入每個跳點的 RTT 統計
-            writer.writerow(['=== 跳點 RTT 統計分析 ==='])
+            writer.writerow(["=== 跳點 RTT 統計分析 ==="])
             hop_stats = self._calculate_hop_rtt_statistics()
-            
+
             if hop_stats:
-                writer.writerow([
-                    '跳點編號', '出現次數', '成功次數', '成功率(%)', 
-                    '平均RTT(ms)', '最小RTT(ms)', '最大RTT(ms)', 
-                    'RTT標準差(ms)', '唯一IP數量', '主要IP位址'
-                ])
-                
+                writer.writerow(
+                    [
+                        "跳點編號",
+                        "出現次數",
+                        "成功次數",
+                        "成功率(%)",
+                        "平均RTT(ms)",
+                        "最小RTT(ms)",
+                        "最大RTT(ms)",
+                        "RTT標準差(ms)",
+                        "唯一IP數量",
+                        "主要IP位址",
+                    ]
+                )
+
                 for hop_num in sorted(hop_stats.keys()):
                     stats = hop_stats[hop_num]
-                    writer.writerow([
-                        hop_num,
-                        stats['total_count'],
-                        stats['success_count'],
-                        f"{stats['success_rate']:.1f}",
-                        f"{stats['avg_rtt']:.3f}" if stats['avg_rtt'] is not None else '',
-                        f"{stats['min_rtt']:.3f}" if stats['min_rtt'] is not None else '',
-                        f"{stats['max_rtt']:.3f}" if stats['max_rtt'] is not None else '',
-                        f"{stats['rtt_std']:.3f}" if stats['rtt_std'] is not None else '',
-                        stats['unique_ips'],
-                        stats['primary_ip']
-                    ])
+                    writer.writerow(
+                        [
+                            hop_num,
+                            stats["total_count"],
+                            stats["success_count"],
+                            f"{stats['success_rate']:.1f}",
+                            (
+                                f"{stats['avg_rtt']:.3f}"
+                                if stats["avg_rtt"] is not None
+                                else ""
+                            ),
+                            (
+                                f"{stats['min_rtt']:.3f}"
+                                if stats["min_rtt"] is not None
+                                else ""
+                            ),
+                            (
+                                f"{stats['max_rtt']:.3f}"
+                                if stats["max_rtt"] is not None
+                                else ""
+                            ),
+                            (
+                                f"{stats['rtt_std']:.3f}"
+                                if stats["rtt_std"] is not None
+                                else ""
+                            ),
+                            stats["unique_ips"],
+                            stats["primary_ip"],
+                        ]
+                    )
 
             writer.writerow([])
-            
+
             # 寫入所有跳點詳細資料
-            writer.writerow(['=== 所有跳點詳細資料 ==='])
-            writer.writerow([
-                '掃描時間', '跳點編號', 'IP位址', '主機名', 'RTT(ms)', '狀態'            ])
-            
+            writer.writerow(["=== 所有跳點詳細資料 ==="])
+            writer.writerow(
+                ["掃描時間", "跳點編號", "IP位址", "主機名", "RTT(ms)", "狀態"]
+            )
+
             for result in self.history:
-                scan_time_str = result.scan_time.strftime('%Y-%m-%d %H:%M:%S')
+                scan_time_str = result.scan_time.strftime("%Y-%m-%d %H:%M:%S")
                 for hop in result.hops:
-                    writer.writerow([
-                        scan_time_str,
-                        hop.hop_number,
-                        hop.ip_address,
-                        hop.hostname or '',
-                        f"{hop.rtt_ms:.3f}" if hop.rtt_ms is not None else '',
-                        hop.status
-                    ])
+                    writer.writerow(
+                        [
+                            scan_time_str,
+                            hop.hop_number,
+                            hop.ip_address,
+                            hop.hostname or "",
+                            f"{hop.rtt_ms:.3f}" if hop.rtt_ms is not None else "",
+                            hop.status,
+                        ]
+                    )
 
         return str(csv_path)
-    
+
     def _save_html_report(self):
         """儲存 HTML 報告"""
         if not self.history:
             self.console.print("❌ 沒有資料可以儲存")
             return
-        
+
         try:
-            filename = f"monitor_{self.target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            filename = (
+                f"monitor_{self.target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            )
             html_file = self._create_enhanced_html_report(filename)
-            
+
             self.console.print(f"✅ 增強版 HTML 報告已儲存: {html_file}")
-            
+
         except Exception as e:
             self.console.print(f"❌ 儲存 HTML 失敗: {str(e)}")
-    
+
     def _create_enhanced_html_report(self, filename: str) -> str:
         """建立增強版的 HTML 報告"""
         from pathlib import Path
-        
+
         output_dir = Path("output_data/html")
         output_dir.mkdir(parents=True, exist_ok=True)
         html_path = output_dir / filename
-        
+
         # 計算統計數據
-        success_count = sum(1 for result in self.history if result.get_statistics()['target_reached'])
+        success_count = sum(
+            1 for result in self.history if result.get_statistics()["target_reached"]
+        )
         success_rate = (success_count / len(self.history) * 100) if self.history else 0
-        
+
         # 建立 HTML 內容
         html_content = self._generate_html_content(success_rate)
-        
-        with open(html_path, 'w', encoding='utf-8') as f:
+
+        with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
-        
+
         return str(html_path)
-    
+
     def _generate_html_content(self, success_rate: float) -> str:
         """生成完整的 HTML 內容"""
         return f"""<!DOCTYPE html>
@@ -646,7 +811,7 @@ class RealtimeMonitor:
     </script>
 </body>
 </html>"""
-    
+
     def _generate_response_time_stats_html(self) -> str:
         """生成回應時間統計的 HTML"""
         return f"""
@@ -665,18 +830,21 @@ class RealtimeMonitor:
             </div>
         </div>
         """
-    
+
     def _generate_scan_history_table_html(self) -> str:
         """生成掃描歷史表格的 HTML"""
         table_rows = []
         for i, result in enumerate(self.history, 1):
             stats = result.get_statistics()
-            status_class = "success" if stats['target_reached'] else "failure"
-            status_text = "✅ 成功" if stats['target_reached'] else "❌ 失敗"
-            
-            avg_rtt = f"{stats['avg_rtt']:.1f}ms" if stats['avg_rtt'] is not None else "-"
-            
-            table_rows.append(f"""
+            status_class = "success" if stats["target_reached"] else "failure"
+            status_text = "✅ 成功" if stats["target_reached"] else "❌ 失敗"
+
+            avg_rtt = (
+                f"{stats['avg_rtt']:.1f}ms" if stats["avg_rtt"] is not None else "-"
+            )
+
+            table_rows.append(
+                f"""
                 <tr>
                     <td>{i}</td>
                     <td>{result.scan_time.strftime('%H:%M:%S')}</td>
@@ -687,8 +855,9 @@ class RealtimeMonitor:
                     <td>{avg_rtt}</td>
                     <td>{result.scan_duration:.1f}s</td>
                 </tr>
-            """)
-        
+            """
+            )
+
         return f"""
         <table>
             <thead>
@@ -708,35 +877,43 @@ class RealtimeMonitor:
             </tbody>
         </table>
         """
-    
+
     def _generate_hop_analysis_html(self) -> str:
         """生成跳點分析的 HTML"""
         if not self.history:
             return "<p>沒有數據可供分析</p>"
-        
+
         # 分析每個跳點的穩定性
         hop_stats = {}
         for result in self.history:
             for hop in result.hops:
                 hop_num = hop.hop_number
                 if hop_num not in hop_stats:
-                    hop_stats[hop_num] = {'ips': set(), 'success': 0, 'total': 0, 'rtts': []}
-                
-                hop_stats[hop_num]['total'] += 1
-                if hop.status == 'success':
-                    hop_stats[hop_num]['success'] += 1
-                    hop_stats[hop_num]['ips'].add(hop.ip_address)
+                    hop_stats[hop_num] = {
+                        "ips": set(),
+                        "success": 0,
+                        "total": 0,
+                        "rtts": [],
+                    }
+
+                hop_stats[hop_num]["total"] += 1
+                if hop.status == "success":
+                    hop_stats[hop_num]["success"] += 1
+                    hop_stats[hop_num]["ips"].add(hop.ip_address)
                     if hop.rtt_ms is not None:
-                        hop_stats[hop_num]['rtts'].append(hop.rtt_ms)
-        
+                        hop_stats[hop_num]["rtts"].append(hop.rtt_ms)
+
         analysis_rows = []
         for hop_num in sorted(hop_stats.keys()):
             stats = hop_stats[hop_num]
-            success_rate = (stats['success'] / stats['total'] * 100) if stats['total'] > 0 else 0
-            avg_rtt = sum(stats['rtts']) / len(stats['rtts']) if stats['rtts'] else 0
-            unique_ips = len(stats['ips'])
-            
-            analysis_rows.append(f"""
+            success_rate = (
+                (stats["success"] / stats["total"] * 100) if stats["total"] > 0 else 0
+            )
+            avg_rtt = sum(stats["rtts"]) / len(stats["rtts"]) if stats["rtts"] else 0
+            unique_ips = len(stats["ips"])
+
+            analysis_rows.append(
+                f"""
                 <tr>
                     <td>{hop_num}</td>
                     <td>{success_rate:.1f}%</td>
@@ -744,8 +921,9 @@ class RealtimeMonitor:
                     <td>{avg_rtt:.1f}ms</td>
                     <td>{stats['success']}/{stats['total']}</td>
                 </tr>
-            """)
-        
+            """
+            )
+
         return f"""
         <table>
             <thead>
@@ -762,20 +940,20 @@ class RealtimeMonitor:
             </tbody>
         </table>
         """
-    
+
     def _generate_chart_javascript(self) -> str:
         """生成圖表的 JavaScript 代碼"""
         # 準備數據
         success_data = []
         rtt_data = []
         labels = []
-        
+
         for result in self.history:
-            labels.append(result.scan_time.strftime('%H:%M:%S'))
+            labels.append(result.scan_time.strftime("%H:%M:%S"))
             stats = result.get_statistics()
-            success_data.append(1 if stats['target_reached'] else 0)
-            rtt_data.append(stats['avg_rtt'] if stats['avg_rtt'] is not None else 0)
-        
+            success_data.append(1 if stats["target_reached"] else 0)
+            rtt_data.append(stats["avg_rtt"] if stats["avg_rtt"] is not None else 0)
+
         return f"""
         // 成功率圖表
         const successCtx = document.getElementById('successChart').getContext('2d');
@@ -832,102 +1010,105 @@ class RealtimeMonitor:
             }}
         }});
         """
-    
+
     def _show_detailed_history(self):
         """顯示詳細歷史"""
         if not self.history:
             self.console.print("❌ 沒有歷史資料")
             return
-        
+
         self.console.print(f"\n📈 詳細歷史記錄 (最近 {len(self.history)} 次掃描):")
-        
+
         table = Table()
         table.add_column("時間", style="cyan")
         table.add_column("狀態", justify="center")
         table.add_column("跳點數", justify="center", style="yellow")
         table.add_column("平均回應", justify="right", style="green")
         table.add_column("目標可達", justify="center")
-        
+
         for result in self.history:
             stats = result.get_statistics()
-            status = "✅" if stats['target_reached'] else "❌"
-            avg_rtt = f"{stats['avg_rtt']:.1f}ms" if stats['avg_rtt'] is not None else "-"
-            reachable = "是" if stats['target_reached'] else "否"
-            
+            status = "✅" if stats["target_reached"] else "❌"
+            avg_rtt = (
+                f"{stats['avg_rtt']:.1f}ms" if stats["avg_rtt"] is not None else "-"
+            )
+            reachable = "是" if stats["target_reached"] else "否"
+
             table.add_row(
                 result.scan_time.strftime("%H:%M:%S"),
                 status,
-                str(stats['total_hops']),
+                str(stats["total_hops"]),
                 avg_rtt,
-                reachable
+                reachable,
             )
-        
+
         self.console.print(table)
         input("\n按 Enter 返回選單...")
-    
+
     def get_current_stats(self) -> MonitorStats:
         """取得當前統計資料"""
         return self.stats
-    
+
     def get_history(self) -> List[ScanResult]:
         """取得歷史記錄"""
         return list(self.history)
-    
+
     def _calculate_hop_rtt_statistics(self) -> dict:
         """計算每個跳點的 RTT 統計資料"""
         import statistics
         from collections import defaultdict, Counter
-        
-        hop_data = defaultdict(lambda: {
-            'rtts': [],
-            'ips': [],
-            'success_count': 0,
-            'total_count': 0
-        })
-        
+
+        hop_data = defaultdict(
+            lambda: {"rtts": [], "ips": [], "success_count": 0, "total_count": 0}
+        )
+
         # 收集每個跳點的數據
         for result in self.history:
             for hop in result.hops:
                 hop_num = hop.hop_number
-                hop_data[hop_num]['total_count'] += 1
-                
-                if hop.status == 'success' and hop.rtt_ms is not None:
-                    hop_data[hop_num]['success_count'] += 1
-                    hop_data[hop_num]['rtts'].append(hop.rtt_ms)
-                
+                hop_data[hop_num]["total_count"] += 1
+
+                if hop.status == "success" and hop.rtt_ms is not None:
+                    hop_data[hop_num]["success_count"] += 1
+                    hop_data[hop_num]["rtts"].append(hop.rtt_ms)
+
                 if hop.ip_address:
-                    hop_data[hop_num]['ips'].append(hop.ip_address)
-        
+                    hop_data[hop_num]["ips"].append(hop.ip_address)
+
         # 計算統計數據
         hop_stats = {}
         for hop_num, data in hop_data.items():
-            rtts = data['rtts']
-            ips = data['ips']
-            
+            rtts = data["rtts"]
+            ips = data["ips"]
+
             # 計算成功率
-            success_rate = (data['success_count'] / data['total_count'] * 100) if data['total_count'] > 0 else 0
-            
+            success_rate = (
+                (data["success_count"] / data["total_count"] * 100)
+                if data["total_count"] > 0
+                else 0
+            )
+
             # 計算 RTT 統計
             avg_rtt = statistics.mean(rtts) if rtts else None
             min_rtt = min(rtts) if rtts else None
             max_rtt = max(rtts) if rtts else None
             rtt_std = statistics.stdev(rtts) if len(rtts) > 1 else None
-            
+
             # 找出最常出現的 IP 位址
             ip_counter = Counter(ips)
-            primary_ip = ip_counter.most_common(1)[0][0] if ips else 'N/A'
+            primary_ip = ip_counter.most_common(1)[0][0] if ips else "N/A"
             unique_ips = len(set(ips))
-            
+
             hop_stats[hop_num] = {
-                'total_count': data['total_count'],
-                'success_count': data['success_count'],
-                'success_rate': success_rate,
-                'avg_rtt': avg_rtt,
-                'min_rtt': min_rtt,
-                'max_rtt': max_rtt,
-                'rtt_std': rtt_std,
-                'unique_ips': unique_ips,
-                'primary_ip': primary_ip
+                "total_count": data["total_count"],
+                "success_count": data["success_count"],
+                "success_rate": success_rate,
+                "avg_rtt": avg_rtt,
+                "min_rtt": min_rtt,
+                "max_rtt": max_rtt,
+                "rtt_std": rtt_std,
+                "unique_ips": unique_ips,
+                "primary_ip": primary_ip,
             }
-        
+
         return hop_stats
